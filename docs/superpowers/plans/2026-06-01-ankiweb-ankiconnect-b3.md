@@ -12,6 +12,8 @@
 
 **Deliberate deferrals (NOT defects):** advanced field options beyond font/size/description; `exportPackage`/`importPackage` (need keyword-only `col.export_anki_package` proto options) → later; gui*/Statistics → B4/later. The minor B2 follow-ups (notesInfo/cardsInfo missing-id `{}` alignment, updateNote empty-guard) are **folded into Task 4 here** as a quick parity fix.
 
+**Intentional divergence (verified vs reference):** Upstream AnkiConnect attaches media inside `createNote`, which `canAddNote`/`canAddNoteWithErrorDetail` also call — so a *can-add check* in real AnkiConnect has the side effect of writing media files to the collection. ankiweb deliberately attaches media ONLY in `addNote`/`addNotes` (a can-add probe stays side-effect-free). This is a conscious, safer divergence, not an oversight.
+
 **Grounded anki 25.9.4 facts (verified live):** `col.models.all_names_and_ids()`→NotetypeNameId(.name/.id); `by_name(name)`/`get(id)`/`id_for_name(name)`→dict|None; `all()`; `field_names(nt)`; `field_map(nt)`→{name:(ord,FieldDict)}; `new(name)`→dict; `add_dict(nt)`→OpChangesWithId; `update_dict(nt, skip_checks=False)`→OpChanges; `remove(id)`→OpChanges; `new_field(name)`/`add_field(nt,fld)`/`remove_field(nt,fld)`/`rename_field(nt,fld,new)`/`reposition_field(nt,fld,idx)`; `new_template(name)`/`add_template(nt,tmpl)`/`remove_template(nt,tmpl)`/`reposition_template(nt,tmpl,idx)`. Model dict keys: `css,did,flds,id,latexPost,latexPre,latexsvg,mod,name,originalStockKind,req,sortf,tmpls,type,usn` (type 0=standard,1=cloze). `flds[i]`: `{name,ord,font,size,description,collapsed,rtl,sticky,plainText,...}`. `tmpls[i]`: `{name,qfmt,afmt,bqfmt,bafmt,ord,...}`. Media: `col.media.write_data(desired_fname, bytes)`→str (possibly renamed), `dir()`→str, `have(fname)`→bool, `trash_files([fnames])`, `add_file(path)`→str. NOTE: `col.models.by_name`/`get` return a CACHED dict — mutate it then `update_dict` (the aqt pattern; that's what AnkiConnect's save_model does).
 
 ---
@@ -100,8 +102,18 @@ def test_model_name_from_id_and_find(client):
 def test_model_fields_on_templates(client):
     res = _call(client, "modelFieldsOnTemplates", modelName="Basic")
     name = list(res.keys())[0]
-    # Card 1: front uses Front; back uses Back (via FrontSide+Back)
-    assert "Front" in res[name][0]
+    # Card 1: front refs == ["Front"]; back side strips FrontSide and de-dupes Front -> []
+    assert res[name][0] == ["Front"]
+    assert "FrontSide" not in res[name][1]
+
+
+def test_find_models_missing_raises(client):
+    # reference RAISES on a missing model (never returns null entries)
+    for action, kw in (("findModelsByName", {"modelNames": ["NoSuchModel"]}),
+                       ("findModelsById", {"modelIds": [123]}),
+                       ("modelNameFromId", {"modelId": 123})):
+        r = client.post("/", json={"action": action, "version": 6, "params": kw})
+        assert r.json()["error"] is not None
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -172,11 +184,14 @@ async def model_styling(rt, modelName=None):
 
 @action("modelFieldsOnTemplates")
 async def model_fields_on_templates(rt, modelName=None):
+    def _refs(fmt):  # field refs, minus the FrontSide special token
+        return [r for r in _FIELD_REF.findall(fmt) if r != "FrontSide"]
+
     def fn(col):
         out = {}
         for t in _model_or_raise(col, modelName)["tmpls"]:
-            q = _FIELD_REF.findall(t["qfmt"])
-            a = _FIELD_REF.findall(t["afmt"])
+            q = _refs(t["qfmt"])
+            a = [r for r in _refs(t["afmt"]) if r not in q]  # de-dupe vs question side
             out[t["name"]] = [q, a]
         return out
     return await rt.service.run(fn)
@@ -185,22 +200,44 @@ async def model_fields_on_templates(rt, modelName=None):
 @action("findModelsById")
 async def find_models_by_id(rt, modelIds=None):
     modelIds = modelIds or []
-    return await rt.service.run(lambda col: [col.models.get(int(m)) for m in modelIds])
+
+    def fn(col):
+        out = []
+        for mid in modelIds:
+            m = col.models.get(int(mid))
+            if m is None:
+                raise Exception("model was not found: " + str(mid))
+            out.append(m)
+        return out
+    return await rt.service.run(fn)
 
 
 @action("findModelsByName")
 async def find_models_by_name(rt, modelNames=None):
     modelNames = modelNames or []
-    return await rt.service.run(lambda col: [col.models.by_name(n) for n in modelNames])
+
+    def fn(col):
+        out = []
+        for n in modelNames:
+            m = col.models.by_name(n)
+            if m is None:
+                raise Exception("model was not found: " + str(n))
+            out.append(m)
+        return out
+    return await rt.service.run(fn)
 
 
 @action("modelNameFromId")
 async def model_name_from_id(rt, modelId=None):
     def fn(col):
         m = col.models.get(int(modelId))
-        return m["name"] if m else None
+        if m is None:
+            raise Exception("model was not found: " + str(modelId))
+        return m["name"]
     return await rt.service.run(fn)
 ```
+
+> **Fidelity (verified vs reference plugin 1173-1268):** `findModelsById`/`findModelsByName`/`modelNameFromId` RAISE `"model was not found: ..."` on a miss — they never return `None`/null entries. `modelFieldsOnTemplates` strips the `FrontSide` special token and de-dupes the answer-side list against the question side (ref 1259-1262). The `[front_refs, back_refs]` per-template shape is an ankiweb simplification (not byte-faithful to upstream's keyed shape), accepted for this scope.
 
 - [ ] **Step 4: Update `actions/__init__.py`**
 
@@ -212,7 +249,7 @@ from ankiweb.ankiconnect.actions import meta, decks, notes, cards, models, media
 - [ ] **Step 5: Run to verify pass**
 
 Run: `conda run -n ankiweb python -m pytest tests/ankiconnect/test_model_actions.py -v`
-Expected: PASS. (`_FIELD_REF` is approximate; the test only checks `Front` appears in Card 1's front refs.)
+Expected: PASS. (`_FIELD_REF` strips cloze/conditional prefixes via the capture group; `modelFieldsOnTemplates` additionally drops `FrontSide` and de-dupes the back list against the front.)
 
 - [ ] **Step 6: Commit**
 
@@ -222,7 +259,7 @@ git commit -m "feat(ankiconnect): model read/introspection actions"
 ```
 
 ## Context
-Read-only model introspection over the model dict (`flds`/`tmpls`/`css`). `modelTemplates` returns `{tmplName:{Front:qfmt, Back:afmt}}`; `modelFieldsOnTemplates` extracts `{{Field}}` refs (approximate regex, strips cloze/conditional prefixes). `findModelsBy*` return the raw model dicts.
+Read-only model introspection over the model dict (`flds`/`tmpls`/`css`). `modelTemplates` returns `{tmplName:{Front:qfmt, Back:afmt}}`; `modelFieldsOnTemplates` extracts `{{Field}}` refs (regex capture strips cloze/conditional prefixes), then drops `FrontSide` and de-dupes the answer list against the question list. `findModelsBy*`/`modelNameFromId` return the raw model dict(s) and RAISE on a missing model (never null entries).
 
 ## Report Format
 Report: Status, test results, files changed, self-review, commit SHA, concerns.
@@ -268,11 +305,23 @@ def test_update_model_templates_and_styling(client):
 
 def test_find_and_replace_in_models(client):
     _call(client, "createModel", modelName="FR", inOrderFields=["A"],
-          cardTemplates=[{"Name": "C1", "Front": "HELLO {{A}}", "Back": "{{A}}"}])
+          cardTemplates=[{"Name": "C1", "Front": "HELLO HELLO {{A}}", "Back": "{{A}}"}])
+    # returns the count of MODELS updated (==1), NOT the 2 occurrences replaced
     n = _call(client, "findAndReplaceInModels", modelName="FR",
               findText="HELLO", replaceText="HI", front=True, back=False, css=False)
-    assert n >= 1
-    assert "HI" in _call(client, "modelTemplates", modelName="FR")["C1"]["Front"]
+    assert n == 1
+    assert "HI HI" in _call(client, "modelTemplates", modelName="FR")["C1"]["Front"]
+
+
+def test_create_model_guards(client):
+    # duplicate name, empty fields, and empty templates all raise (ref 1120-1127)
+    dup = client.post("/", json={"action": "createModel", "version": 6, "params": {
+        "modelName": "Basic", "inOrderFields": ["X"],
+        "cardTemplates": [{"Name": "C", "Front": "{{X}}", "Back": "{{X}}"}]}})
+    assert dup.json()["error"] is not None
+    empty = client.post("/", json={"action": "createModel", "version": 6, "params": {
+        "modelName": "EmptyOne", "inOrderFields": [], "cardTemplates": []}})
+    assert empty.json()["error"] is not None
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -291,8 +340,15 @@ async def create_model(rt, modelName=None, inOrderFields=None, cardTemplates=Non
                        css=None, isCloze=False):
     inOrderFields = inOrderFields or []
     cardTemplates = cardTemplates or []
+    # Reference guards (plugin/__init__.py:1120-1127): reject empty field/template lists.
+    if not inOrderFields:
+        raise Exception("Must provide at least one field for inOrderFields")
+    if not cardTemplates:
+        raise Exception("Must provide at least one card for cardTemplates")
 
     def fn(col):
+        if modelName in [m.name for m in col.models.all_names_and_ids()]:
+            raise Exception("Model name already exists")  # ref 1126-1127
         m = col.models.new(modelName)
         for fname in inOrderFields:
             col.models.add_field(m, col.models.new_field(fname))
@@ -320,9 +376,9 @@ async def update_model_templates(rt, model=None):
         for t in m["tmpls"]:
             if t["name"] in templates:
                 upd = templates[t["name"]]
-                if "Front" in upd:
+                if upd.get("Front"):   # ref ignores empty-string Front/Back (1305/1309)
                     t["qfmt"] = upd["Front"]
-                if "Back" in upd:
+                if upd.get("Back"):
                     t["afmt"] = upd["Back"]
         return None, col.models.update_dict(m)
     await run_emit(rt, fn)
@@ -344,21 +400,34 @@ async def update_model_styling(rt, model=None):
 @action("findAndReplaceInModels")
 async def find_and_replace_in_models(rt, modelName=None, findText=None, replaceText=None,
                                      front=True, back=True, css=True):
-    def fn(col):
-        m = _model_or_raise(col, modelName)
-        count = 0
+    # Reference returns the number of MODELS updated (ref 1328-1353), not the
+    # occurrence count, and treats a falsy modelName as "all models".
+    def _replace(m):
+        changed = False
         for t in m["tmpls"]:
             if front and findText in t["qfmt"]:
-                count += t["qfmt"].count(findText)
                 t["qfmt"] = t["qfmt"].replace(findText, replaceText)
+                changed = True
             if back and findText in t["afmt"]:
-                count += t["afmt"].count(findText)
                 t["afmt"] = t["afmt"].replace(findText, replaceText)
+                changed = True
         if css and findText in m["css"]:
-            count += m["css"].count(findText)
             m["css"] = m["css"].replace(findText, replaceText)
-        op = col.models.update_dict(m)
-        return count, op
+            changed = True
+        return changed
+
+    def fn(col):
+        if modelName:
+            models = [_model_or_raise(col, modelName)]
+        else:
+            models = [col.models.get(nt.id) for nt in col.models.all_names_and_ids()]
+        updated = 0
+        last_op = None
+        for m in models:
+            if _replace(m):
+                last_op = col.models.update_dict(m)
+                updated += 1
+        return updated, last_op  # run_emit tolerates last_op None (no model changed)
     return await run_emit(rt, fn)
 ```
 
@@ -454,12 +523,20 @@ def _template_or_raise(m, name):
 @action("modelTemplateAdd")
 async def model_template_add(rt, modelName=None, template=None):
     template = template or {}
+    name = template["Name"]   # ref requires Name/Front/Back (1377-1397); KeyError if absent
+    front = template["Front"]
+    back = template["Back"]
 
     def fn(col):
         m = _model_or_raise(col, modelName)
-        t = col.models.new_template(template.get("Name", "Card"))
-        t["qfmt"] = template.get("Front", "")
-        t["afmt"] = template.get("Back", "")
+        for t in m["tmpls"]:        # update-in-place if a template with this name exists
+            if t["name"] == name:
+                t["qfmt"] = front
+                t["afmt"] = back
+                return None, col.models.update_dict(m)
+        t = col.models.new_template(name)
+        t["qfmt"] = front
+        t["afmt"] = back
         col.models.add_template(m, t)
         return None, col.models.update_dict(m)
     await run_emit(rt, fn)
@@ -541,6 +618,9 @@ async def model_field_reposition(rt, modelName=None, fieldName=None, index=None)
 
 @action("modelFieldSetFont")
 async def model_field_set_font(rt, modelName=None, fieldName=None, font=None):
+    if not isinstance(font, str):   # ref 1469-1470
+        raise Exception("font should be a string")
+
     def fn(col):
         m = _model_or_raise(col, modelName)
         _field_or_raise(m, fieldName)["font"] = font
@@ -551,9 +631,12 @@ async def model_field_set_font(rt, modelName=None, fieldName=None, font=None):
 
 @action("modelFieldSetFontSize")
 async def model_field_set_font_size(rt, modelName=None, fieldName=None, fontSize=None):
+    if not isinstance(fontSize, int) or isinstance(fontSize, bool):   # ref 1483-1484
+        raise Exception("fontSize should be an integer")
+
     def fn(col):
         m = _model_or_raise(col, modelName)
-        _field_or_raise(m, fieldName)["size"] = int(fontSize)
+        _field_or_raise(m, fieldName)["size"] = fontSize
         return None, col.models.update_dict(m)
     await run_emit(rt, fn)
     return None
@@ -561,10 +644,13 @@ async def model_field_set_font_size(rt, modelName=None, fieldName=None, fontSize
 
 @action("modelFieldSetDescription")
 async def model_field_set_description(rt, modelName=None, fieldName=None, description=None):
+    if not isinstance(description, str):   # ref 1497-1498
+        raise Exception("description should be a string")
+
     def fn(col):
         m = _model_or_raise(col, modelName)
-        _field_or_raise(m, fieldName)["description"] = description or ""
-        return True, col.models.update_dict(m)
+        _field_or_raise(m, fieldName)["description"] = description
+        return True, col.models.update_dict(m)  # 25.9.4 always has the 'description' key
     return await run_emit(rt, fn)
 ```
 
@@ -650,6 +736,30 @@ def test_add_note_with_picture_field(client):
     assert '<img src="img.png">' in info["fields"]["Back"]["value"]
 
 
+def test_store_media_skip_hash_short_circuits(client):
+    import hashlib
+    raw = b"skip-me"
+    data = base64.b64encode(raw).decode()
+    h = hashlib.md5(raw).hexdigest()
+    # matching skipHash -> returns None and writes nothing
+    assert _call(client, "storeMediaFile", filename="sk.txt", data=data, skipHash=h) is None
+    assert "sk.txt" not in _call(client, "getMediaFilesNames", pattern="*.txt")
+
+
+def test_add_note_picture_single_object_and_unknown_field(client):
+    # picture may be a single object (not a list); a target field absent from the
+    # model is ignored rather than fabricated.
+    data = base64.b64encode(b"\x89PNG").decode()
+    nid = _call(client, "addNote", note={
+        "deckName": "Default", "modelName": "Basic",
+        "fields": {"Front": "q", "Back": ""},
+        "picture": {"filename": "one.png", "data": data, "fields": ["Back", "Nope"]},
+    })
+    info = _call(client, "notesInfo", notes=[nid])[0]
+    assert '<img src="one.png">' in info["fields"]["Back"]["value"]
+    assert "Nope" not in info["fields"]
+
+
 def test_notes_info_missing_id_appends_empty(client):
     # B2 parity fix: a missing id yields {} (positional), not an error
     res = _call(client, "notesInfo", notes=[999999999])
@@ -667,35 +777,46 @@ Expected: FAIL.
 from __future__ import annotations
 import base64
 import fnmatch
+import hashlib
 import os
 from ankiweb.ankiconnect.registry import action
 
 
-def _store(col, filename, data=None, path=None, url=None):
+def _fetch_bytes(data=None, path=None, url=None):
     if data is not None:
-        raw = base64.b64decode(data)
-    elif path is not None:
+        return base64.b64decode(data)
+    if path is not None:
         with open(path, "rb") as f:
-            raw = f.read()
-    elif url is not None:
+            return f.read()
+    if url is not None:
         import httpx
-        raw = httpx.get(url, follow_redirects=True, timeout=30).content
-    else:
-        raise Exception("storeMediaFile requires one of data/path/url")
+        return httpx.get(url, follow_redirects=True, timeout=30).content
+    raise Exception("storeMediaFile requires one of data/path/url")
+
+
+def _store(col, filename, data=None, path=None, url=None, skipHash=None, deleteExisting=True):
+    """Returns the stored filename (possibly renamed), or None if skipHash matched."""
+    raw = _fetch_bytes(data, path, url)
+    if skipHash is not None and hashlib.md5(raw).hexdigest() == skipHash:
+        return None  # ref 702-710: caller already has an identical file
+    if deleteExisting:
+        col.media.trash_files([filename])  # ref 711-712: delete-then-write
     return col.media.write_data(filename, raw)
 
 
 @action("storeMediaFile")
 async def store_media_file(rt, filename=None, data=None, path=None, url=None,
                            skipHash=None, deleteExisting=True):
-    return await rt.service.run(lambda col: _store(col, filename, data, path, url))
+    return await rt.service.run(
+        lambda col: _store(col, filename, data, path, url, skipHash, deleteExisting))
 
 
 @action("retrieveMediaFile")
 async def retrieve_media_file(rt, filename=None):
     def fn(col):
-        full = os.path.join(col.media.dir(), filename)
-        if not os.path.exists(full):
+        safe = os.path.basename(filename or "")   # ref normalizes; prevents '../' traversal
+        full = os.path.join(col.media.dir(), safe)
+        if not safe or not os.path.exists(full):
             return False
         with open(full, "rb") as f:
             return base64.b64encode(f.read()).decode()
@@ -724,25 +845,70 @@ async def delete_media_file(rt, filename=None):
 # --- media-field attachment for addNote/addNotes (called from notes.py) ---
 def attach_media(col, spec):
     """Store any audio/video/picture media in the note spec and append the right HTML
-    into the named target fields of spec['fields'] (mutates spec['fields'] in place)."""
+    into the target fields of spec['fields'] (mutates spec['fields'] in place). Only
+    appends to fields that actually exist on the note's model (ref addMedia 769-800)."""
     fields = spec.setdefault("fields", {})
+    model = col.models.by_name(spec.get("modelName", ""))
+    valid = set(col.models.field_names(model)) if model else None
     for kind, tmpl in (("picture", '<img src="%s">'), ("audio", "[sound:%s]"),
                        ("video", "[sound:%s]")):
-        for media in spec.get(kind) or []:
-            fname = _store(col, media["filename"], media.get("data"),
-                           media.get("path"), media.get("url"))
+        media_list = spec.get(kind) or []
+        if isinstance(media_list, dict):   # AnkiConnect accepts a single object too (ref 773-776)
+            media_list = [media_list]
+        for media in media_list:
+            stored = _store(col, media["filename"], media.get("data"), media.get("path"),
+                            media.get("url"), media.get("skipHash"))
+            fname = stored if stored is not None else media["filename"]
             html = tmpl % fname
             for field_name in media.get("fields") or []:
+                if valid is not None and field_name not in valid:
+                    continue  # ref only writes fields present on the model (790)
                 fields[field_name] = (fields.get(field_name, "") or "") + html
 ```
 
 - [ ] **Step 4: Wire media into addNote/addNotes + the B2 missing-id parity fixes**
 
-In `ankiweb/ankiconnect/actions/notes.py`:
-1. Import: `from ankiweb.ankiconnect.actions.media import attach_media`.
-2. In `add_note`'s `fn(col)`, BEFORE `build_note`, call `attach_media(col, spec)` so the media HTML is in `spec["fields"]` when the note is built. (Same in `add_notes`' loop: `attach_media(col, spec or {})` before `build_note`.) NOTE: do NOT attach media in `canAddNote` (no side effects on a can-add check).
-3. **notesInfo missing-id parity:** change `notes_info`'s per-id loop to append `{}` when the note id doesn't exist:
+These are exact edits to the EXISTING `notes.py`/`cards.py` (do not invent new structure — match the snippets below).
+
+**`ankiweb/ankiconnect/actions/notes.py`:**
+
+(a) Add the import near the top (after the existing `_helpers` import):
 ```python
+from ankiweb.ankiconnect.actions.media import attach_media
+```
+
+(b) `add_note` — `spec` is already bound (`spec = note or {}`). Add `attach_media(col, spec)` as the FIRST line of `fn(col)`, before `build_note`:
+```python
+    def fn(col):
+        attach_media(col, spec)
+        n, _ = build_note(col, spec)
+        ...  # rest unchanged
+```
+
+(c) `add_notes` — bind `spec` once per iteration (avoids `spec or {}` evaluating to two different dicts when an entry is None, which would drop media), then attach before build. Replace the start of the loop body:
+```python
+        for spec in specs:
+            try:
+                spec = spec or {}
+                attach_media(col, spec)
+                n, _ = build_note(col, spec)
+                ok, err = check_addable(col, n, spec.get("options"))
+                if not ok:
+                    raise Exception(err)
+                did = col.decks.id(spec.get("deckName", "Default"))
+                last_op = col.add_note(n, did)
+                added_ids.append(n.id)
+            except Exception as e:
+                errs.append(str(e))
+```
+(Leave `canAddNote`/`canAddNoteWithErrorDetail` UNCHANGED — see the divergence note in Context.)
+
+(d) `notesInfo` missing-id parity — keep the existing `ids = ...` line (the `query=` path depends on it); replace ONLY the return-comprehension:
+```python
+@action("notesInfo")
+async def notes_info(rt, notes=None, query=None):
+    def fn(col):
+        ids = list(notes) if notes is not None else list(col.find_notes(query or ""))
         out = []
         for nid in ids:
             try:
@@ -750,12 +916,63 @@ In `ankiweb/ankiconnect/actions/notes.py`:
             except Exception:
                 out.append({})
         return out
+    return await rt.service.run(fn)
 ```
-4. **notesModTime missing-id parity:** same try/except → `{}`.
-5. **updateNote empty-guard:** in `update_note`, if neither `fields` nor `tags` present, `raise Exception('Must provide a "fields" or "tags" property.')`.
 
-In `ankiweb/ankiconnect/actions/cards.py`:
-6. **cardsInfo / cardsModTime missing-id parity:** wrap each per-id build in try/except → append `{}`.
+(e) `notesModTime` missing-id parity — this is currently a lambda comprehension; rewrite into a `def fn` loop:
+```python
+@action("notesModTime")
+async def notes_mod_time(rt, notes=None):
+    notes = notes or []
+
+    def fn(col):
+        out = []
+        for nid in notes:
+            try:
+                out.append({"noteId": nid, "mod": col.get_note(nid).mod})
+            except Exception:
+                out.append({})
+        return out
+    return await rt.service.run(fn)
+```
+
+(f) `updateNote` empty-guard — add at the top of `update_note` (after `spec = note or {}`):
+```python
+    if "fields" not in spec and "tags" not in spec:
+        raise Exception('Must provide a "fields" or "tags" property.')
+```
+
+**`ankiweb/ankiconnect/actions/cards.py`:** both `cardsInfo` and `cardsModTime` are currently lambda comprehensions; rewrite each into a `def fn` loop appending `{}` on a missing id:
+```python
+@action("cardsInfo")
+async def cards_info(rt, cards=None):
+    cards = cards or []
+
+    def fn(col):
+        out = []
+        for cid in cards:
+            try:
+                out.append(card_to_info(col, col.get_card(cid)))
+            except Exception:
+                out.append({})
+        return out
+    return await rt.service.run(fn)
+
+
+@action("cardsModTime")
+async def cards_mod_time(rt, cards=None):
+    cards = cards or []
+
+    def fn(col):
+        out = []
+        for cid in cards:
+            try:
+                out.append({"cardId": cid, "mod": col.get_card(cid).mod})
+            except Exception:
+                out.append({})
+        return out
+    return await rt.service.run(fn)
+```
 
 - [ ] **Step 5: Run to verify pass**
 
@@ -771,7 +988,7 @@ git commit -m "feat(ankiconnect): media actions + addNote media fields + missing
 ```
 
 ## Context
-Media: `storeMediaFile` accepts base64 `data` / local `path` / `url` (httpx, sync in the worker thread); `retrieveMediaFile` base64-encodes the file (or False if missing); `getMediaFilesNames` globs the media dir; `deleteMediaFile` → `trash_files`. `attach_media` (the deferred B2 feature) stores picture/audio/video media and appends `<img src>` / `[sound:]` HTML into the target fields, called from addNote/addNotes (NOT canAdd). Also folds in the B2 missing-id `{}` parity for notesInfo/notesModTime/cardsInfo/cardsModTime and the updateNote empty-guard.
+Media: `storeMediaFile` accepts base64 `data` / local `path` / `url` (httpx, sync in the worker thread), honors `skipHash` (md5 match → return None, no write) and `deleteExisting` (delete-then-write); `retrieveMediaFile` base64-encodes the file (or False if missing), normalizing the filename to its basename; `getMediaFilesNames` globs the media dir; `deleteMediaFile` → `trash_files`. `attach_media` (the deferred B2 feature) stores picture/audio/video media (accepts a single object or a list) and appends `<img src>` / `[sound:]` HTML into the target fields that exist on the model — called from addNote/addNotes only (see the Intentional divergence note re: canAdd). Also folds in the B2 missing-id `{}` parity for notesInfo/notesModTime/cardsInfo/cardsModTime and the updateNote empty-guard.
 
 ## Report Format
 Report: Status, test results (media + note + card + full suite), files changed, self-review, commit SHA, concerns.
@@ -782,6 +999,8 @@ Report: Status, test results (media + note + card + full suite), files changed, 
 
 **1. Spec coverage (B3 = Models + Media from spec §2):** Models read (Task 1): modelNames/...AndIds/modelFieldNames/...Descriptions/...Fonts/modelFieldsOnTemplates/modelTemplates/modelStyling/findModelsBy{Id,Name}/modelNameFromId. createModel + updates (Task 2): createModel/updateModelTemplates/updateModelStyling/findAndReplaceInModels. Mutators (Task 3): modelTemplate{Add,Remove,Rename,Reposition}, modelField{Add,Remove,Rename,Reposition,SetFont,SetFontSize,SetDescription}. Media (Task 4): storeMediaFile/retrieveMediaFile/getMediaFilesNames/getMediaDirPath/deleteMediaFile + addNote media fields + B2 missing-id parity. Deferred (documented): export/import, advanced field opts.
 
-**2. Placeholder scan:** No TBD/TODO. The `_FIELD_REF` regex is "approximate" but the test only asserts the basic case; acceptable. The Task-3 reposition note is verify-and-adjust.
+**2. Placeholder scan:** No TBD/TODO. The Task-3 reposition note is verify-and-adjust (anki-api agent confirmed reposition works after add + update_dict).
 
-**3. Type/name consistency:** `_model_or_raise`/`_field_or_raise`/`_template_or_raise` (models.py); `run_emit`/`build_note`/`check_addable` (from _helpers, B2); `attach_media` (media.py) imported by notes.py. All actions `async def(rt, **params)` with kwargs matching AnkiConnect param names (modelName, inOrderFields, cardTemplates, css, isCloze, model, findText, replaceText, front, back, oldFieldName, newFieldName, fieldName, index, font, fontSize, description, oldTemplateName, newTemplateName, templateName, template, filename, data, path, url, pattern). `col.models.add_dict→OpChangesWithId` (op.id used by createModel). `actions/__init__` imports meta/decks/notes/cards/models/media; media.py stub created in Task 1, filled in Task 4.
+**3. Type/name consistency:** `_model_or_raise`/`_field_or_raise`/`_template_or_raise` (models.py); `run_emit`/`build_note`/`check_addable` (from _helpers, B2); `attach_media` (media.py) imported by notes.py. All actions `async def(rt, **params)` with kwargs matching AnkiConnect param names (modelName, inOrderFields, cardTemplates, css, isCloze, model, findText, replaceText, front, back, oldFieldName, newFieldName, fieldName, index, font, fontSize, description, oldTemplateName, newTemplateName, templateName, template, filename, data, path, url, pattern, skipHash, deleteExisting). `col.models.add_dict→OpChangesWithId` (op.id used by createModel; run_emit's `getattr(op,"changes",op)` handles it). `actions/__init__` imports meta/decks/notes/cards/models/media; media.py stub created in Task 1, filled in Task 4.
+
+**4. Adversarial verification (3-agent Workflow, run against live anki 25.9.4 + reference plugin + existing codebase):** anki-api confirmed EVERY `col.models.*`/`col.media.*` call exists and behaves as assumed (cached-dict mutation persists; `add_dict`→`get(op.id)` works; reposition after add persists; cloze type=1 persists; media round-trip + collision-rename). consistency confirmed the run_emit (value, op) tuple chain, `OpChangesWithId.changes`/`.id`, the media.py-stub ordering, and NO circular import (media→registry only; notes→media; media never imports notes). The following contract gaps the contract agent found are NOW FIXED in this plan: createModel guards (empty fields/templates/duplicate name); findModels*/modelNameFromId raise on miss; findAndReplaceInModels returns models-updated count + all-models path; storeMediaFile skipHash/deleteExisting; retrieveMediaFile basename normalization; attach_media single-object + model-field restriction + skipHash; canAddNote divergence documented (not mis-stated); modelFieldsOnTemplates FrontSide strip+dedupe; updateModelTemplates empty-string ignore; modelTemplateAdd require-keys + update-in-place; modelFieldSet* type checks; the four B2 missing-id parity rewrites spelled out for the lambda-comprehension cases; the addNotes `spec or {}` double-eval nit. **Accepted as-is:** `CardTypeError` on a field-less/broken template is surfaced cleanly by the dispatcher (dispatch.py:30-31 envelopes `str(exc)`) — matching reference behavior with NO `skip_checks=True` (which would silently persist broken templates); the `[front_refs, back_refs]` shape of `modelFieldsOnTemplates` is an ankiweb simplification, not byte-faithful to upstream's keyed shape.
