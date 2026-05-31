@@ -30,3 +30,16 @@ def test_media_traversal_blocked(client):
     # percent-encoded traversal that survives normalization and reaches the guard.
     r = client.get("/%2e%2e/%2e%2e/etc/passwd")
     assert r.status_code == 403
+
+
+def test_media_audio_mime(client):
+    import os
+    mdir = client.portal.call(client.app.state.service.run, lambda col: col.media.dir())
+    for fname, mime in [("a.mp3", "audio/mpeg"), ("b.ogg", "audio/ogg"),
+                        ("c.wav", "audio/wav"), ("d.m4a", "audio/mp4"),
+                        ("e.webm", "video/webm")]:
+        with open(os.path.join(mdir, fname), "wb") as f:
+            f.write(b"\x00\x01\x02")
+        r = client.get("/" + fname)
+        assert r.status_code == 200, fname
+        assert r.headers["content-type"].split(";")[0] == mime, (fname, r.headers["content-type"])

@@ -11,6 +11,10 @@ MIME = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
     ".ico": "image/x-icon", ".json": "application/json", ".woff": "font/woff",
     ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf", ".map": "application/json",
+    ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".oga": "audio/ogg",
+    ".opus": "audio/opus", ".wav": "audio/wav", ".flac": "audio/flac",
+    ".m4a": "audio/mp4", ".aac": "audio/aac",
+    ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
 }
 SVELTEKIT_PAGES = {"graphs", "congrats", "card-info", "change-notetype", "deck-options",
                    "import-anki-package", "import-csv", "import-page", "image-occlusion"}
