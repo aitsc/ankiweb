@@ -1,6 +1,7 @@
 from __future__ import annotations
 from ankiweb.ankiconnect.registry import action
 from ankiweb.ankiconnect.actions._helpers import run_emit, build_note, check_addable
+from ankiweb.ankiconnect.actions.media import attach_media
 
 
 @action("addNote")
@@ -8,6 +9,7 @@ async def add_note(rt, note=None):
     spec = note or {}
 
     def fn(col):
+        attach_media(col, spec)
         n, _ = build_note(col, spec)
         ok, err = check_addable(col, n, spec.get("options"))
         if not ok:
@@ -58,11 +60,13 @@ async def add_notes(rt, notes=None):
         last_op = None
         for spec in specs:
             try:
-                n, _ = build_note(col, spec or {})
-                ok, err = check_addable(col, n, (spec or {}).get("options"))
+                spec = spec or {}
+                attach_media(col, spec)
+                n, _ = build_note(col, spec)
+                ok, err = check_addable(col, n, spec.get("options"))
                 if not ok:
                     raise Exception(err)
-                did = col.decks.id((spec or {}).get("deckName", "Default"))
+                did = col.decks.id(spec.get("deckName", "Default"))
                 last_op = col.add_note(n, did)
                 added_ids.append(n.id)
             except Exception as e:
@@ -97,7 +101,13 @@ from ankiweb.ankiconnect.actions._helpers import note_to_info  # noqa: E402
 async def notes_info(rt, notes=None, query=None):
     def fn(col):
         ids = list(notes) if notes is not None else list(col.find_notes(query or ""))
-        return [note_to_info(col, col.get_note(nid)) for nid in ids]
+        out = []
+        for nid in ids:
+            try:
+                out.append(note_to_info(col, col.get_note(nid)))
+            except Exception:
+                out.append({})
+        return out
     return await rt.service.run(fn)
 
 
@@ -135,6 +145,8 @@ async def get_note_tags(rt, note=None):
 @action("updateNote")
 async def update_note(rt, note=None):
     spec = note or {}
+    if "fields" not in spec and "tags" not in spec:
+        raise Exception('Must provide a "fields" or "tags" property.')
     if "fields" in spec:
         await update_note_fields(rt, note=spec)
     if "tags" in spec:
@@ -225,8 +237,16 @@ async def replace_tags_in_all_notes(rt, tag_to_replace=None, replace_with_tag=No
 @action("notesModTime")
 async def notes_mod_time(rt, notes=None):
     notes = notes or []
-    return await rt.service.run(
-        lambda col: [{"noteId": nid, "mod": col.get_note(nid).mod} for nid in notes])
+
+    def fn(col):
+        out = []
+        for nid in notes:
+            try:
+                out.append({"noteId": nid, "mod": col.get_note(nid).mod})
+            except Exception:
+                out.append({})
+        return out
+    return await rt.service.run(fn)
 
 
 @action("deleteNotes")

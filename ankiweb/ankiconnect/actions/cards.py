@@ -12,15 +12,31 @@ async def find_cards(rt, query=""):
 @action("cardsInfo")
 async def cards_info(rt, cards=None):
     cards = cards or []
-    return await rt.service.run(
-        lambda col: [card_to_info(col, col.get_card(cid)) for cid in cards])
+
+    def fn(col):
+        out = []
+        for cid in cards:
+            try:
+                out.append(card_to_info(col, col.get_card(cid)))
+            except Exception:
+                out.append({})
+        return out
+    return await rt.service.run(fn)
 
 
 @action("cardsModTime")
 async def cards_mod_time(rt, cards=None):
     cards = cards or []
-    return await rt.service.run(
-        lambda col: [{"cardId": cid, "mod": col.get_card(cid).mod} for cid in cards])
+
+    def fn(col):
+        out = []
+        for cid in cards:
+            try:
+                out.append({"cardId": cid, "mod": col.get_card(cid).mod})
+            except Exception:
+                out.append({})
+        return out
+    return await rt.service.run(fn)
 
 
 @action("suspend")
