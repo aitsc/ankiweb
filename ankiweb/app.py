@@ -52,6 +52,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from ankiweb.bridge.ws import build_router as build_ws_router
     app.include_router(build_ws_router(lambda: app.state.hub))
 
+    # --- Bridge spike (Task 12): drive the real reviewer.js via the WS bridge ---
+    # Registered BEFORE the StaticFiles mount and the media catch-all so /spike/*
+    # routes win over the catch-all "/{path:path}" media router.
+    from fastapi.responses import FileResponse
+
+    @app.get("/spike/reviewer")
+    def spike_page():
+        return FileResponse(settings.shell_dir / "reviewer_spike.html")
+
+    @app.post("/spike/push_question")
+    async def spike_push():
+        # render the first card's question through the real bundle
+        def render(col):
+            cid = col.find_cards("")[0]
+            card = col.get_card(cid)
+            return card.question(), card.answer()
+        q, a = await app.state.service.run(render)
+        await app.state.hub.push_call("reviewer", "_showQuestion", [q, a, "card card1"])
+        return {"pushed": True}
+
     from fastapi.staticfiles import StaticFiles
     static_dir = settings.shell_dir / "static"
     static_dir.mkdir(parents=True, exist_ok=True)

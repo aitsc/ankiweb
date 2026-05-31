@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="/_anki/css/reviewer.css" />
+    <script src="/shell/static/bootstrap.js"></script>
+    <!-- Match Anki's _initWeb dependency order: jQuery, then MathJax config,
+         then the MathJax engine, then the reviewer bundle. reviewer.js bundles
+         its own jQuery (window.$ = $o.$), but _updateQA references the global
+         MathJax (MathJax.startup.promise), which is NOT bundled — load it here. -->
+    <script src="/_anki/js/vendor/jquery.min.js"></script>
+    <script src="/_anki/js/mathjax.js"></script>
+    <script src="/_anki/js/vendor/mathjax/tex-chtml-full.js" async></script>
+    <script src="/_anki/js/reviewer.js"></script>
+  </head>
+  <body>
+    <div id="_mark" hidden>★</div>
+    <div id="_flag" hidden>⚑</div>
+    <div id="qa" dir="auto"></div>
+    <script>
+      // reviewer.js ends with `for (let t in $o) window[t] = $o[t];`, copying its
+      // exports (_showQuestion, _showAnswer, _updateQA, $, ...) onto `window`.
+      // Register DEFERRED wrappers so the lookup happens at call time, not at
+      // registration time — robust even if the bundle attaches later.
+      window.addEventListener("load", function () {
+        var b = window.__ankiwebBridge;
+        b.registerCalls({
+          _showQuestion: function () { return window._showQuestion.apply(window, arguments); },
+          _showAnswer: function () { return window._showAnswer.apply(window, arguments); },
+        });
+      });
+    </script>
+  </body>
+</html>
