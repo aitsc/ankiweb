@@ -103,12 +103,22 @@ def test_can_add_note_with_error_detail(client):
     assert res["canAdd"] is False and "error" in res
 
 
-def test_add_notes_rolls_back_on_error(client):
-    # one good, one empty → AnkiConnect addNotes returns [id|null] but rolls back all on error.
-    res = _call(client, "addNotes", notes=[_basic(front="g1"), _basic(front="")])
-    # rolled back: no notes persisted
-    assert _call(client, "findNotes", query="deck:Default") == []
-    assert res[1] is None
+def test_add_notes_success_returns_ids(client):
+    res = _call(client, "addNotes", notes=[_basic(front="g1"), _basic(front="g2")])
+    assert len(res) == 2 and all(isinstance(i, int) for i in res)
+
+
+def test_add_notes_errors_and_rolls_back_on_any_failure(client):
+    # one good + one empty → faithful AnkiConnect: the WHOLE call errors and rolls back all.
+    r = client.post("/", json={"action": "addNotes", "version": 6,
+                               "params": {"notes": [_basic(front="g1"), _basic(front="")]}})
+    assert r.json()["error"] is not None
+    assert _call(client, "findNotes", query="deck:Default") == []  # rolled back
+
+
+def test_can_add_notes_batch(client):
+    res = _call(client, "canAddNotes", notes=[_basic(front="ok"), _basic(front="")])
+    assert res == [True, False]
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -128,9 +138,11 @@ _EMPTY, _DUPLICATE = 1, 2
 
 
 async def run_emit(rt, fn):
-    """Run fn(col) -> (value, op_with_changes); broadcast its OpChanges flags on the bus
-    (so an open web UI refreshes); return value."""
+    """Run fn(col) -> (value, op_with_changes | None); broadcast its OpChanges flags on the
+    bus (so an open web UI refreshes); return value. Tolerates a None op (no-op actions)."""
     value, op = await rt.service.run(fn)
+    if op is None:  # no-op action (e.g. removeEmptyNotes with nothing to remove)
+        return value
     changes = getattr(op, "changes", op)
     flags = op_changes_to_flags(changes)
     if any(flags.values()):
@@ -222,58 +234,40 @@ async def add_notes(rt, notes=None):
     specs = notes or []
 
     def fn(col):
-        # AnkiConnect rolls back ALL created notes if any fails. Use a single undo entry
-        # and rollback by removing what we added on first error.
+        # Faithful to AnkiConnect (plugin __init__.py:2134): add each note (addNote raises
+        # on empty/duplicate); collect error strings; if ANY failed, roll back ALL added
+        # notes and raise. On full success return the list of ids.
         added_ids = []
-        results = []
-        try:
-            for spec in specs:
+        errs = []
+        last_op = None
+        for spec in specs:
+            try:
                 n, _ = build_note(col, spec or {})
-                ok, _err = check_addable(col, n, (spec or {}).get("options"))
+                ok, err = check_addable(col, n, (spec or {}).get("options"))
                 if not ok:
-                    results.append(None)
-                    continue
+                    raise Exception(err)
                 did = col.decks.id((spec or {}).get("deckName", "Default"))
-                col.add_note(n, did)
+                last_op = col.add_note(n, did)
                 added_ids.append(n.id)
-                results.append(n.id)
-        except Exception:
+            except Exception as e:
+                errs.append(str(e))
+        if errs:
             if added_ids:
                 col.remove_notes(added_ids)
-            raise
-        # AnkiConnect semantics: if ANY note couldn't be added (None present), roll back all.
-        if any(r is None for r in results) and added_ids:
-            col.remove_notes(added_ids)
-        return results, _SENTINEL_REMOVE(col) if False else None
-
-    # addNotes broadcasts only when something persisted; do it via run + manual emit.
-    results = await rt.service.run(lambda col: _add_notes_inner(col, specs))
-    return results
+            raise Exception(str(errs))
+        return added_ids, last_op  # last_op is None for an empty list → run_emit tolerates
+    return await run_emit(rt, fn)
 
 
-def _add_notes_inner(col, specs):
-    added_ids = []
-    results = []
-    for spec in specs:
-        try:
-            n, _ = build_note(col, spec or {})
-            ok, _err = check_addable(col, n, (spec or {}).get("options"))
-            if not ok:
-                results.append(None)
-                continue
-            did = col.decks.id((spec or {}).get("deckName", "Default"))
-            col.add_note(n, did)
-            added_ids.append(n.id)
-            results.append(n.id)
-        except Exception:
-            results.append(None)
-    if any(r is None for r in results) and added_ids:
-        col.remove_notes(added_ids)
-        results = [None] * len(results)
-    return results
+@action("canAddNotes")
+async def can_add_notes(rt, notes=None):
+    return [await can_add_note(rt, note=n) for n in (notes or [])]
+
+
+@action("canAddNotesWithErrorDetail")
+async def can_add_notes_with_error_detail(rt, notes=None):
+    return [await can_add_note_with_error_detail(rt, note=n) for n in (notes or [])]
 ```
-
-> NOTE for the implementer: the `add_notes` action above has a redundant first `fn` left in by mistake — DELETE it. The real implementation is `_add_notes_inner` + the `add_notes` body that calls `rt.service.run(lambda col: _add_notes_inner(col, specs))`. Keep `add_notes` as: build the note list, add each (None for unaddable), and if any is None roll back all added ids and return all-None. (AnkiConnect's `addNotes` rolls back everything if any fails.) Use `rt.service.run` (the rollback makes the net change possibly zero; a manual emit is optional — for B2 use `run` and skip the broadcast for `addNotes`, noting the web UI won't auto-refresh on a bulk add; or wrap with run_emit returning `(results, last_op)` if you tracked an OpChanges). Keep it simple: `run` + return results.
 
 - [ ] **Step 4: Update `actions/__init__.py`**
 
@@ -286,7 +280,7 @@ from ankiweb.ankiconnect.actions import meta, decks, notes, cards  # noqa: F401
 - [ ] **Step 5: Run to verify pass**
 
 Run: `conda run -n ankiweb python -m pytest tests/ankiconnect/test_note_actions.py -v`
-Expected: PASS. Fix the `add_notes` redundancy per the NOTE before running.
+Expected: PASS.
 
 - [ ] **Step 6: Commit**
 
@@ -591,13 +585,11 @@ async def delete_notes(rt, notes=None):
 async def remove_empty_notes(rt):
     def fn(col):
         report = col.get_empty_cards()
-        nids_to_remove = []
-        for note in report.notes:
-            if len(note.card_ids) == len(col.get_note(note.note_id).card_ids()):
-                nids_to_remove.append(note.note_id)
-        if nids_to_remove:
-            return None, col.remove_notes(nids_to_remove)
-        return None, None
+        # use the backend's own "all this note's cards are empty" flag
+        nids = [e.note_id for e in report.notes if e.will_delete_note]
+        if nids:
+            return None, col.remove_notes(nids)
+        return None, None  # run_emit tolerates a None op
     await run_emit(rt, fn)
     return None
 
@@ -878,7 +870,16 @@ async def are_due(rt, cards=None):
 @action("getEaseFactors")
 async def get_ease_factors(rt, cards=None):
     cards = cards or []
-    return await rt.service.run(lambda col: [col.get_card(cid).factor for cid in cards])
+
+    def fn(col):
+        out = []
+        for cid in cards:
+            try:
+                out.append(col.get_card(cid).factor)
+            except Exception:
+                out.append(None)  # faithful: AnkiConnect appends None for missing cards
+        return out
+    return await rt.service.run(fn)
 
 
 @action("setEaseFactors")
@@ -917,8 +918,8 @@ async def set_specific_value_of_card(rt, card=None, keys=None, newValues=None, w
                 out.append(True)
             except Exception as exc:
                 out.append([False, str(exc)])
-        col.update_card(c)
-        return out, col.update_card(c)
+        op = col.update_card(c)
+        return out, op
     return await run_emit(rt, fn)
 
 
@@ -952,6 +953,8 @@ async def relearn_cards(rt, cards=None):
     cards = cards or []
 
     def fn(col):
+        if not cards:  # avoid invalid "where id in ()"
+            return None
         col.db.execute(
             "update cards set type=3, queue=1 where id in (%s)" %
             ",".join("?" * len(cards)), *cards)
@@ -1009,16 +1012,15 @@ git commit -m "feat(ankiconnect): card scheduling actions (suspend/ease/due/forg
 Scheduling wrappers over `col.sched`. `answerCards` mirrors the reviewer flow (start_timer + get_scheduling_states + build_answer + answer_card). `relearnCards` uses raw SQL (faithful to AnkiConnect). `areDue` approximated via `is:due`/`is:new` search membership. `setSpecificValueOfCard` blocks risky keys unless `warning_check`.
 
 ## Report Format
-Report: Status, test results (new + full suite), files changed, self-review, commit SHA, concerns. Fix the `setSpecificValueOfCard` double-update + the Task-1 `add_notes` redundancy noted inline.
+Report: Status, test results (new + full suite), files changed, self-review, commit SHA, concerns.
 
 ---
 
 ## Self-Review
 
-**1. Spec coverage (B2 = Notes + Cards from spec §2):** Notes group (Tasks 1-3): add/canAdd(+ErrorDetail)/addNotes; updateNoteFields/updateNote/updateNoteModel/updateNoteTags/getNoteTags; addTags/removeTags/getTags/clearUnusedTags/replaceTags/replaceTagsInAllNotes; findNotes/notesInfo/notesModTime/deleteNotes/removeEmptyNotes/cardsToNotes. Cards group (Tasks 4-5): findCards/cardsInfo/cardsModTime; getEaseFactors/setEaseFactors/setSpecificValueOfCard; suspend/unsuspend/suspended/areSuspended/areDue/getIntervals; forgetCards/relearnCards/answerCards/setDueDate. Deferred (documented): media fields in addNote, advanced duplicateScope, canAddNotes/canAddNotesWithErrorDetail (the batch variants — ADD these as trivial loops over canAddNote in Task 1 if time permits, else B3).
+**1. Spec coverage (B2 = Notes + Cards from spec §2):** Notes group (Tasks 1-3): add/canAdd(+ErrorDetail)/addNotes; updateNoteFields/updateNote/updateNoteModel/updateNoteTags/getNoteTags; addTags/removeTags/getTags/clearUnusedTags/replaceTags/replaceTagsInAllNotes; findNotes/notesInfo/notesModTime/deleteNotes/removeEmptyNotes/cardsToNotes. Cards group (Tasks 4-5): findCards/cardsInfo/cardsModTime; getEaseFactors/setEaseFactors/setSpecificValueOfCard; suspend/unsuspend/suspended/areSuspended/areDue/getIntervals; forgetCards/relearnCards/answerCards/setDueDate. canAddNotes/canAddNotesWithErrorDetail are implemented (Task 1, loops over the single-note variants). Deferred (documented): media fields in addNote (audio/video/picture → B3), advanced duplicateScope options.
 
-**2. Placeholder scan:** Two inline "fix this" NOTEs (the Task-1 `add_notes` redundancy and the Task-5 `setSpecificValueOfCard` double-update) are explicit corrections the implementer must apply, with the correct form stated — not silent placeholders. The `removeEmptyNotes` NOTE is verify-and-adjust with a concrete fallback.
+**2. Placeholder scan:** No fix-this-later NOTEs remain (the `add_notes` dead code, `setSpecificValueOfCard` double-update, and `removeEmptyNotes` count-comparison were all corrected inline after verification). `addNotes` is faithful (raise + rollback-all); `run_emit` is None-safe; `removeEmptyNotes` uses `will_delete_note`; `getEaseFactors` tolerates missing ids.
 
 **3. Type/name consistency:** `run_emit(rt, fn)`/`build_note`/`check_addable`/`note_to_info`/`card_to_info` (helpers) used across notes.py/cards.py. All actions `async def(rt, **params)` with kwargs matching AnkiConnect param names. `op_changes_to_flags` imported from `ankiweb.collection_service` (exists from Plan 2). cards.py stub created in Task 1, filled in Task 4. `actions/__init__` imports meta/decks/notes/cards.
 
-> **Implementer note:** also add the batch canAdd variants in Task 1 (trivial): `canAddNotes(notes)` → `[await can-add per note]`, `canAddNotesWithErrorDetail(notes)` → list of the detail dicts. They loop the single-note logic.
