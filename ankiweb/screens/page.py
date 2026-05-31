@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from typing import Sequence
 
 
@@ -20,7 +21,7 @@ def render_page(
     return (
         "<!doctype html>\n"
         '<html><head><meta charset="utf-8">'
-        f'<script>window.__ankiwebContext="{context}"</script>'
+        f"<script>window.__ankiwebContext={json.dumps(context)}</script>"
         f"{links}"
         f"{scripts}"
         '<script src="/shell/static/bootstrap.js"></script>'

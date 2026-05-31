@@ -108,11 +108,15 @@ def make_reviewer_handler(service, hub):
         if arg == "show":
             await _show_next()
         elif arg == "ans":
+            if session.card is None:
+                return None
             info = await service.run(lambda col: render_answer(col, session))
             await hub.push_call("reviewer", "_showAnswer", [info["a"]])
             await hub.push_call("reviewer", "ankiwebSetAnswerBar",
                                 [ease_buttons_bar(info["labels"])])
         elif arg in ("ease1", "ease2", "ease3", "ease4"):
+            if session.card is None:
+                return None
             ease = int(arg[4:])
             await service.run_op(lambda col: answer_current(col, session, ease),
                                  initiator="reviewer")

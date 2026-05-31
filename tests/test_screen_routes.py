@@ -119,3 +119,20 @@ def test_reviewer_ease_answers_and_shows_next(client):
             if m["type"] == "call" and m["fn"] == "ankiwebNavigate":
                 nav = m["args"]; break
         assert nav == ["/overview"]
+
+
+def test_reviewer_ans_before_show_does_not_crash_socket(client):
+    # Sending 'ans' with no in-flight card must NOT drop the socket; a subsequent
+    # 'show' must still work (proves the handler guarded session.card is None).
+    did = client.portal.call(client.app.state.service.run, lambda col: col.decks.id("Default"))
+    client.portal.call(client.app.state.service.run, lambda col: col.decks.set_current(did))
+    with client.websocket_connect("/ws?context=reviewer") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "ans"})
+        ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "show"})
+        # the socket survived 'ans' → 'show' produces the question pushes
+        got_question = False
+        for _ in range(3):
+            m = ws.receive_json()
+            if m["type"] == "call" and m["fn"] == "_showQuestion":
+                got_question = True; break
+        assert got_question
