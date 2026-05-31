@@ -17,6 +17,7 @@ class CollectionService:
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="anki")
         self._lock = asyncio.Lock()
         self._col: Collection | None = None
+        self._subscribers: list = []
 
     async def open(self) -> None:
         path = self._settings.collection_path
@@ -43,3 +44,18 @@ class CollectionService:
                 raise RuntimeError("collection not open")
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(self._executor, lambda: fn(col))
+
+    async def backend_raw(self, method: str, data: bytes) -> bytes:
+        def fn(col):
+            return getattr(col._backend, f"{method}_raw")(data)
+        return await self.run(fn)
+
+    def subscribe(self, cb) -> None:
+        """cb(changes, initiator) — called after a mutating op broadcasts changes."""
+        self._subscribers.append(cb)
+
+    async def emit(self, changes, initiator) -> None:
+        for cb in list(self._subscribers):
+            res = cb(changes, initiator)
+            if asyncio.iscoroutine(res):
+                await res
