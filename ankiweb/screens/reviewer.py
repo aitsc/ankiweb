@@ -1,4 +1,5 @@
 from __future__ import annotations
+import html as _html
 from dataclasses import dataclass
 
 
@@ -46,3 +47,23 @@ def answer_current(col, session: ReviewerSession, ease: int):
         card=session.card, states=session.states, rating=rating_map[ease]
     )
     return col.sched.answer_card(answer)
+
+
+_EASE_NAMES = ("Again", "Hard", "Good", "Easy")
+
+
+def show_answer_bar() -> str:
+    return "<button id='ansbut' class='ansbut' onclick=\"pycmd('ans')\">Show Answer</button>"
+
+
+def ease_buttons_bar(labels) -> str:
+    """labels: 4 interval strings in order [Again, Hard, Good, Easy]."""
+    cells = []
+    for i, name in enumerate(_EASE_NAMES, start=1):
+        label = _html.escape(labels[i - 1]) if i - 1 < len(labels) else ""
+        cells.append(
+            f"<button class='ease' data-ease='{i}' onclick=\"pycmd('ease{i}')\">"
+            f"<span class='ease-label'>{name}</span>"
+            f"<span class='ease-ivl'>{label}</span></button>"
+        )
+    return "<div class='ease-row'>" + "".join(cells) + "</div>"

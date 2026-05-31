@@ -50,3 +50,20 @@ def test_answer_advances_queue(col):
     assert changes.study_queues is True
     after = col.sched.counts()
     assert after != before                 # answering moved the card
+
+
+def test_show_answer_bar():
+    from ankiweb.screens.reviewer import show_answer_bar
+    html = show_answer_bar()
+    assert "Show Answer" in html
+    assert "pycmd('ans')" in html
+
+
+def test_ease_buttons_bar():
+    from ankiweb.screens.reviewer import ease_buttons_bar
+    html = ease_buttons_bar(["<1m", "<6m", "<10m", "3d"])
+    for name in ("Again", "Hard", "Good", "Easy"):
+        assert name in html
+    for i in (1, 2, 3, 4):
+        assert f"pycmd('ease{i}')" in html
+    assert "3d" in html  # easy interval label rendered
