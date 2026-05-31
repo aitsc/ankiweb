@@ -47,3 +47,34 @@ def test_cards_mod_time(client):
     cid = _call(client, "findCards", query="deck:Default")[0]
     res = _call(client, "cardsModTime", cards=[cid])
     assert res[0]["cardId"] == cid and isinstance(res[0]["mod"], int)
+
+
+def test_suspend_unsuspend(client):
+    _add(client, "susp")
+    cid = _call(client, "findCards", query="deck:Default")[0]
+    assert _call(client, "suspend", cards=[cid]) is True
+    assert _call(client, "suspended", card=cid) is True
+    assert _call(client, "areSuspended", cards=[cid]) == [True]
+    _call(client, "unsuspend", cards=[cid])
+    assert _call(client, "suspended", card=cid) is False
+
+
+def test_ease_factors(client):
+    _add(client, "ease")
+    cid = _call(client, "findCards", query="deck:Default")[0]
+    assert _call(client, "setEaseFactors", cards=[cid], easeFactors=[2500]) == [True]
+    assert _call(client, "getEaseFactors", cards=[cid]) == [2500]
+
+
+def test_set_due_date_and_forget(client):
+    _add(client, "due")
+    cid = _call(client, "findCards", query="deck:Default")[0]
+    assert _call(client, "setDueDate", cards=[cid], days="3") is True
+    assert _call(client, "forgetCards", cards=[cid]) is None
+
+
+def test_answer_cards(client):
+    _add(client, "ans")
+    cid = _call(client, "findCards", query="deck:Default")[0]
+    res = _call(client, "answerCards", answers=[{"cardId": cid, "ease": 3}])
+    assert res == [True]
