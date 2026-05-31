@@ -101,3 +101,38 @@ def test_bulk_tags(client):
 
 def test_clear_unused_tags(client):
     assert _call(client, "clearUnusedTags") is None
+
+
+# Task 3: Note query/info/delete actions
+def test_notes_info_shape(client):
+    nid = _call(client, "addNote", note=_basic(front="info1"))
+    info = _call(client, "notesInfo", notes=[nid])[0]
+    assert info["noteId"] == nid
+    assert info["modelName"] == "Basic"
+    assert info["fields"]["Front"]["value"] == "info1"
+    assert info["fields"]["Front"]["order"] == 0
+    assert isinstance(info["tags"], list) and isinstance(info["cards"], list)
+
+
+def test_notes_info_by_query(client):
+    _call(client, "addNote", note=_basic(front="byq"))
+    res = _call(client, "notesInfo", query="deck:Default")
+    assert len(res) == 1
+
+
+def test_delete_notes(client):
+    nid = _call(client, "addNote", note=_basic(front="del"))
+    assert _call(client, "deleteNotes", notes=[nid]) is None
+    assert _call(client, "findNotes", query="deck:Default") == []
+
+
+def test_cards_to_notes(client):
+    nid = _call(client, "addNote", note=_basic(front="c2n"))
+    cards = _call(client, "findCards", query="deck:Default")
+    assert _call(client, "cardsToNotes", cards=cards) == [nid]
+
+
+def test_notes_mod_time(client):
+    nid = _call(client, "addNote", note=_basic(front="mt"))
+    res = _call(client, "notesModTime", notes=[nid])
+    assert res[0]["noteId"] == nid and isinstance(res[0]["mod"], int)

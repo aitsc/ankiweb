@@ -220,3 +220,47 @@ async def replace_tags_in_all_notes(rt, tag_to_replace=None, replace_with_tag=No
         return None, col.tags.rename(tag_to_replace, replace_with_tag)
     await run_emit(rt, fn)
     return None
+
+
+@action("notesModTime")
+async def notes_mod_time(rt, notes=None):
+    notes = notes or []
+    return await rt.service.run(
+        lambda col: [{"noteId": nid, "mod": col.get_note(nid).mod} for nid in notes])
+
+
+@action("deleteNotes")
+async def delete_notes(rt, notes=None):
+    notes = notes or []
+
+    def fn(col):
+        return None, col.remove_notes(notes)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("removeEmptyNotes")
+async def remove_empty_notes(rt):
+    def fn(col):
+        report = col.get_empty_cards()
+        # use the backend's own "all this note's cards are empty" flag
+        nids = [e.note_id for e in report.notes if e.will_delete_note]
+        if nids:
+            return None, col.remove_notes(nids)
+        return None, None  # run_emit tolerates a None op
+    await run_emit(rt, fn)
+    return None
+
+
+@action("cardsToNotes")
+async def cards_to_notes(rt, cards=None):
+    cards = cards or []
+
+    def fn(col):
+        seen = []
+        for cid in cards:
+            nid = col.get_card(cid).nid
+            if nid not in seen:
+                seen.append(nid)
+        return seen
+    return await rt.service.run(fn)
