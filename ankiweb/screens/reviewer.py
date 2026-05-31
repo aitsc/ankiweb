@@ -98,8 +98,12 @@ def make_reviewer_handler(service, hub):
     async def _show_next():
         info = await service.run(lambda col: load_question(col, session))
         if info is None:  # finished → overview (which renders Congrats)
+            hub.ui_state.current_card_id = None
+            hub.ui_state.side = None
             await hub.push_call("reviewer", "ankiwebNavigate", ["/overview"])
             return
+        hub.ui_state.current_card_id = session.card.id
+        hub.ui_state.side = "question"
         await hub.push_call("reviewer", "_showQuestion",
                             [info["q"], info["a"], info["bodyclass"]])
         await hub.push_call("reviewer", "ankiwebSetAnswerBar", [show_answer_bar()])
@@ -114,6 +118,7 @@ def make_reviewer_handler(service, hub):
             await hub.push_call("reviewer", "_showAnswer", [info["a"]])
             await hub.push_call("reviewer", "ankiwebSetAnswerBar",
                                 [ease_buttons_bar(info["labels"])])
+            hub.ui_state.side = "answer"
         elif arg in ("ease1", "ease2", "ease3", "ease4"):
             if session.card is None:
                 return None
@@ -121,6 +126,9 @@ def make_reviewer_handler(service, hub):
             await service.run_op(lambda col: answer_current(col, session, ease),
                                  initiator="reviewer")
             await _show_next()
+        elif arg == "starttimer":
+            if session.card is not None:
+                await service.run(lambda col: session.card.start_timer())
         elif arg == "decks":
             await hub.push_call("reviewer", "ankiwebNavigate", ["/deckbrowser"])
         # ignore everything else (e.g. reviewer.js emits "updateToolbar" after each render)

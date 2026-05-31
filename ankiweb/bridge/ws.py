@@ -16,6 +16,7 @@ def build_router(get_hub) -> APIRouter:
         hub = get_hub()
         await websocket.accept()
         hub.register(context, websocket)
+        hub.ui_state.current_screen = context
         try:
             while True:
                 msg = await websocket.receive_json()

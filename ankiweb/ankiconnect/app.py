@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse, Response
 from ankiweb.config import Settings
 from ankiweb.collection_service import CollectionService
 from ankiweb.ankiconnect.config import AnkiConnectConfig
+from ankiweb.bridge.hub import BridgeHub
 from ankiweb.ankiconnect.runtime import Runtime
 from ankiweb.ankiconnect.cors import allow_origin
 from ankiweb.ankiconnect.dispatch import dispatch_one
@@ -20,6 +21,7 @@ def create_ankiconnect_app(
     settings = settings or Settings.from_env()
     config = config or AnkiConnectConfig()
     owns_service = service is None
+    hub = hub if hub is not None else BridgeHub()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

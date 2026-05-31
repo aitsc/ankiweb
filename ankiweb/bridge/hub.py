@@ -1,6 +1,7 @@
 from __future__ import annotations
 import asyncio
 from typing import Any, Awaitable, Callable
+from ankiweb.bridge.ui_state import UiState
 
 
 class BridgeHub:
@@ -12,6 +13,7 @@ class BridgeHub:
         self._pending: dict[int, asyncio.Future] = {}
         # ctx -> async handler(arg:str) -> json-serializable result
         self._handlers: dict[str, Callable[[str], Awaitable[Any]]] = {}
+        self.ui_state = UiState()
 
     def register(self, ctx: str, ws) -> None:
         self._conns.setdefault(ctx, []).append(ws)
@@ -56,6 +58,7 @@ class BridgeHub:
         return await fut
 
     async def dispatch_cmd(self, ctx: str, arg: str) -> Any:
+        self.ui_state.current_screen = ctx
         handler = self._handlers.get(ctx)
         if handler is None:
             return None
