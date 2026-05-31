@@ -59,3 +59,25 @@ def note_to_info(col, note):
         "mod": note.mod,
         "cards": list(note.card_ids()),
     }
+
+
+def card_to_info(col, card):
+    note = card.note()
+    model = note.note_type()
+    fields = {}
+    for name, (ord_, _f) in col.models.field_map(model).items():
+        fields[name] = {"value": note.fields[ord_], "order": ord_}
+    try:
+        states = col._backend.get_scheduling_states(card.id)
+        next_reviews = list(col.sched.describe_next_states(states))
+    except Exception:
+        next_reviews = []
+    return {
+        "cardId": card.id, "note": note.id, "deckName": col.decks.name(card.did),
+        "modelName": model["name"], "fieldOrder": card.ord,
+        "fields": fields, "question": card.question(), "answer": card.answer(),
+        "css": model.get("css", ""), "ord": card.ord, "type": card.type,
+        "queue": card.queue, "due": card.due, "reps": card.reps, "lapses": card.lapses,
+        "left": card.left, "mod": card.mod, "factor": card.factor, "interval": card.ivl,
+        "nextReviews": next_reviews,
+    }
