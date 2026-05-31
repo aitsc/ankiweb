@@ -52,6 +52,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from ankiweb.bridge.ws import build_router as build_ws_router
     app.include_router(build_ws_router(lambda: app.state.hub))
 
+    from fastapi.staticfiles import StaticFiles
+    static_dir = settings.shell_dir / "static"
+    static_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/shell/static", StaticFiles(directory=str(static_dir), check_dir=False), name="shell")
+
     from ankiweb.assets import build_media_router
     app.include_router(build_media_router(lambda: app.state.service))
 

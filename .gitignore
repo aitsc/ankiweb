@@ -12,4 +12,5 @@ venv/
 .ruff_cache/
 ankiweb/web_assets/
 ankiweb/shell/static/
+node_modules/
 *.anki2

@@ -1,0 +1,6 @@
+{
+  "name": "ankiweb-shell",
+  "private": true,
+  "devDependencies": { "esbuild": "^0.21.0", "typescript": "^5.4.0" },
+  "scripts": { "build": "node tools/build_shell.mjs" }
+}
