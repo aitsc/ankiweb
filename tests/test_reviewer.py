@@ -85,3 +85,10 @@ def test_render_av_buttons_and_filenames():
     assert "[anki:play" not in html
     assert html.count("replay-button") == 2
     assert "pycmd('play:q:0')" in html and "pycmd('play:a:1')" in html
+
+
+def test_reviewer_body_registers_audio_player():
+    from ankiweb.screens.reviewer import reviewer_page_body
+    body = reviewer_page_body()
+    assert "ankiwebPlayAudio" in body
+    assert "Audio(" in body or "new Audio" in body
