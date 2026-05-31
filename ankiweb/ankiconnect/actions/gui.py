@@ -195,9 +195,12 @@ async def gui_selected_notes(rt):
 
 @action("guiPlayAudio")
 async def gui_play_audio(rt):
-    # [sound:] audio playback in the reviewer is deferred to Plan 4; preserve the contract:
-    # True while review is active (best-effort side effect), False otherwise.
-    return bool(_ui(rt).review_active)
+    ui = _ui(rt)
+    if not ui.review_active:
+        return False
+    # replay the current side's audio via the reviewer's own player (mirrors qt guiPlayAudio)
+    await rt.hub.dispatch_cmd("reviewer", "replay")
+    return True
 
 
 # ---------- deferred to Plan D (editor/import) — faithful stubs now ----------

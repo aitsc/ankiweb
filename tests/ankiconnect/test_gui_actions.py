@@ -181,3 +181,28 @@ def test_gui_import_file_refuses(client):
 
 def test_gui_exit_anki_noop(client):
     assert _gui(client, "guiExitAnki") is None
+
+
+def test_gui_play_audio_pushes_when_reviewing(client):
+    import os
+    def setup(col):
+        m = col.models.new("AudioM")
+        col.models.add_field(m, col.models.new_field("F"))
+        t = col.models.new_template("C"); t["qfmt"] = "{{F}} [sound:s.mp3]"; t["afmt"] = "{{F}}"
+        col.models.add_template(m, t); col.models.add_dict(m)
+        did = col.decks.id("AudioDeck")
+        n = col.new_note(col.models.by_name("AudioM")); n["F"] = "x"
+        col.add_note(n, did)
+        with open(os.path.join(col.media.dir(), "s.mp3"), "wb") as f:
+            f.write(b"\x00")
+        col.decks.set_current(did)
+    client.portal.call(client.app.state.service.run, setup)
+    with client.websocket_connect("/ws?context=reviewer") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "show"})
+        for _ in range(3):   # _showQuestion + ankiwebSetAnswerBar + ankiwebPlayAudio
+            ws.receive_json()
+        assert _gui(client, "guiPlayAudio") is True
+        m = ws.receive_json()
+        while m["type"] != "call" or m["fn"] != "ankiwebPlayAudio":
+            m = ws.receive_json()
+        assert "s.mp3" in m["args"][0]
