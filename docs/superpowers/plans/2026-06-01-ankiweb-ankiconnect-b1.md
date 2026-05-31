@@ -332,6 +332,11 @@ def test_localhost_implies_127():
     assert allowed and header == "http://127.0.0.1:5000"
 
 
+def test_localhost_with_port_and_https_allowed():
+    assert allow_origin("http://localhost:8080", ["http://localhost"])[0]
+    assert allow_origin("https://localhost", ["http://localhost"])[0]
+
+
 def test_extension_origins_allowed_when_localhost_listed():
     allowed, _ = allow_origin("chrome-extension://abc", ["http://localhost"])
     assert allowed
@@ -417,7 +422,9 @@ def allow_origin(origin: str | None, cors_list: list) -> tuple[bool, str]:
     if origin in cors_list:
         return True, origin
     if "http://localhost" in cors_list:
-        if origin.startswith("http://127.0.0.1") or origin.startswith("https://127.0.0.1"):
+        # AnkiConnect treats localhost and 127.0.0.1 symmetrically, any scheme/port.
+        if origin.startswith(("http://localhost", "https://localhost",
+                              "http://127.0.0.1", "https://127.0.0.1")):
             return True, origin
         if origin.startswith(_EXTENSION_SCHEMES):
             return True, origin
@@ -518,7 +525,23 @@ def create_ankiconnect_app(
 Run: `conda run -n ankiweb python -m pytest tests/ankiconnect/test_cors.py tests/ankiconnect/test_app.py -v`
 Expected: PASS. (`version`, `requestPermission` come from `actions/meta.py` in Task 4 — if `test_version_action` fails with "unsupported action: version" because meta isn't implemented yet, that is expected ordering; do Task 4 then re-run. To keep this task self-contained, you MAY implement the trivial `version` action now in `actions/meta.py` per Task 4 Step 3 and the `decks`/`meta` imports — but the canonical home is Task 4. Simplest: implement Task 4's `meta.py` and a stub `decks.py` (empty) here so the imports resolve, then flesh out decks in Task 5.)
 
-> Implementation note: `actions/__init__.py` imports `meta` and `decks`, so BOTH module files must exist (even if `decks.py` is just a stub with the registrations added in Task 5). Create `ankiweb/ankiconnect/actions/decks.py` as an empty module now; Task 5 fills it.
+> **Ordering / imports (IMPORTANT):** `app.py` runs a top-level `import ankiweb.ankiconnect.actions`, and `actions/__init__.py` imports BOTH `meta` and `decks` — so both module files MUST exist in THIS task (before the app imports them). Create them now as stubs:
+>
+> `ankiweb/ankiconnect/actions/meta.py` — minimal, just `version` (so `test_version_action` passes); Task 4 appends the rest:
+> ```python
+> from __future__ import annotations
+> from ankiweb.ankiconnect.registry import action
+>
+>
+> @action("version")
+> async def version(rt):
+>     return 6
+> ```
+>
+> `ankiweb/ankiconnect/actions/decks.py` — an empty module (a docstring only); Task 5 fills it:
+> ```python
+> """AnkiConnect deck actions (filled in Task 5)."""
+> ```
 
 - [ ] **Step 5: Commit**
 
@@ -538,7 +561,7 @@ Report: Status, test results, files changed, self-review, commit SHA, concerns.
 ## Task 4: Meta actions (version, apiReflect, requestPermission, reloadCollection, profiles, sync)
 
 **Files:**
-- Create: `ankiweb/ankiconnect/actions/meta.py`
+- Modify: `ankiweb/ankiconnect/actions/meta.py` (replace the Task-3 `version`-only stub with the full implementation below)
 - Test: `tests/ankiconnect/test_meta_actions.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -573,7 +596,9 @@ def test_version(client):
 def test_api_reflect_lists_actions(client):
     res = _call(client, "apiReflect", scopes=["actions"])
     assert res["scopes"] == ["actions"]
-    assert "version" in res["actions"] and "deckNames" in res["actions"]
+    # deckNames isn't registered until Task 5 (decks); assert meta actions here
+    assert "version" in res["actions"] and "requestPermission" in res["actions"]
+    assert "multi" in res["actions"]
 
 
 def test_request_permission_granted_for_localhost(client):
@@ -640,7 +665,8 @@ async def request_permission(rt, allowed=False, origin=None):
 
 @action("reloadCollection")
 async def reload_collection(rt):
-    await rt.service.run(lambda col: col.reset())
+    # col.reset() is a deprecated no-op in anki 25.9.4; the single shared collection is
+    # always live, so there's nothing to reload. Return None (AnkiConnect returns null).
     return None
 
 
@@ -763,6 +789,18 @@ def test_get_deck_stats(client):
     entry = list(stats.values())[0]
     assert entry["name"] == "Default"
     assert "new_count" in entry and "total_in_deck" in entry
+
+
+def test_remove_unknown_or_default_config_returns_false(client):
+    # get_config(missing) returns the Default config in 25.9.4, so the guard must
+    # reject by id-mismatch; and the Default config (id 1) is never removable.
+    assert _call(client, "removeDeckConfigId", configId=999999) is False
+    assert _call(client, "removeDeckConfigId", configId=1) is False
+
+
+def test_get_deck_config_missing_deck_does_not_create(client):
+    assert _call(client, "getDeckConfig", deck="NoSuchDeck") is False
+    assert "NoSuchDeck" not in _call(client, "deckNames")  # a read query must not create it
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -775,6 +813,17 @@ Expected: FAIL (deck actions not registered).
 ```python
 from __future__ import annotations
 from ankiweb.ankiconnect.registry import action
+
+
+def _config_exists(col, conf_id) -> bool:
+    """In anki 25.9.4 col.decks.get_config(missing) returns the DEFAULT config (id=1),
+    NOT None — so an `is None` guard is a dead branch. Check existence by matching the
+    returned dict's id to the requested id."""
+    try:
+        c = col.decks.get_config(int(conf_id))
+    except Exception:
+        return False
+    return c is not None and int(c["id"]) == int(conf_id)
 
 
 @action("deckNames")
@@ -825,7 +874,8 @@ async def delete_decks(rt, decks=None, cardsToo=False):
     decks = decks or []
 
     def fn(col):
-        ids = [col.decks.id(name) for name in decks]
+        ids = [col.decks.id_for_name(name) for name in decks]  # read-only: don't create
+        ids = [i for i in ids if i is not None]
         return col.decks.remove(ids)
     await rt.service.run_op(fn, initiator="ankiconnect")
     return None
@@ -834,7 +884,7 @@ async def delete_decks(rt, decks=None, cardsToo=False):
 @action("getDeckConfig")
 async def get_deck_config(rt, deck=None):
     def fn(col):
-        did = col.decks.id(deck)
+        did = col.decks.id_for_name(deck)  # read-only: don't create the deck on a query
         if did is None:
             return False
         return col.decks.config_dict_for_deck_id(did)
@@ -844,7 +894,7 @@ async def get_deck_config(rt, deck=None):
 @action("saveDeckConfig")
 async def save_deck_config(rt, config=None):
     def fn(col):
-        if not config or col.decks.get_config(config.get("id")) is None:
+        if not config or not _config_exists(col, config.get("id")):
             return False
         col.decks.update_config(config)
         return True
@@ -856,10 +906,13 @@ async def set_deck_config_id(rt, decks=None, configId=None):
     decks = decks or []
 
     def fn(col):
-        if col.decks.get_config(int(configId)) is None:
+        if not _config_exists(col, configId):
             return False
         for name in decks:
-            d = col.decks.get(col.decks.id(name))
+            did = col.decks.id_for_name(name)  # read-only: skip missing decks
+            if did is None:
+                continue
+            d = col.decks.get(did)
             d["conf"] = int(configId)
             col.decks.save(d)
         return True
@@ -869,9 +922,9 @@ async def set_deck_config_id(rt, decks=None, configId=None):
 @action("cloneDeckConfigId")
 async def clone_deck_config_id(rt, name=None, cloneFrom="1"):
     def fn(col):
-        clone = col.decks.get_config(int(cloneFrom))
-        if clone is None:
+        if not _config_exists(col, cloneFrom):
             return False
+        clone = col.decks.get_config(int(cloneFrom))
         return col.decks.add_config_returning_id(name, clone)
     return await rt.service.run(fn)
 
@@ -879,7 +932,8 @@ async def clone_deck_config_id(rt, name=None, cloneFrom="1"):
 @action("removeDeckConfigId")
 async def remove_deck_config_id(rt, configId=None):
     def fn(col):
-        if col.decks.get_config(int(configId)) is None:
+        # refuse the Default config (id 1 → backend raises) and unknown ids
+        if int(configId) == 1 or not _config_exists(col, configId):
             return False
         col.decks.remove_config(int(configId))
         return True
@@ -888,32 +942,26 @@ async def remove_deck_config_id(rt, configId=None):
 
 @action("getDeckStats")
 async def get_deck_stats(rt, decks=None):
-    wanted = set(decks or [])
+    names = decks or []
 
     def fn(col):
-        out: dict[str, dict] = {}
-
-        def walk(node):
-            if node.name and node.name in wanted:  # node.name is the full path for due-tree? see note
-                out[str(node.deck_id)] = {
-                    "deck_id": node.deck_id, "name": node.name,
-                    "new_count": node.new_count, "learn_count": node.learn_count,
-                    "review_count": node.review_count,
-                    "total_in_deck": node.total_in_deck,
-                }
-            for child in node.children:
-                walk(child)
+        # deck_due_tree() nodes carry LEAF names, so match by id (not name): resolve each
+        # requested full name → id (read-only), then find its node in the tree.
         tree = col.sched.deck_due_tree()
-        for child in tree.children:
-            walk(child)
-        # deck_due_tree nodes carry LEAF names; match by full name via col.decks.name
-        if not out:
-            for name in wanted:
-                did = col.decks.id(name)
-                if did is not None:
-                    out[str(did)] = {"deck_id": did, "name": name,
-                                     "new_count": 0, "learn_count": 0,
-                                     "review_count": 0, "total_in_deck": 0}
+        out: dict[str, dict] = {}
+        for name in names:
+            did = col.decks.id_for_name(name)  # read-only: don't create unknown decks
+            if did is None:
+                continue
+            node = col.decks.find_deck_in_tree(tree, did)
+            if node is None:  # exists but pruned from the due-tree (e.g. empty) → zeros
+                out[str(did)] = {"deck_id": did, "name": name, "new_count": 0,
+                                 "learn_count": 0, "review_count": 0, "total_in_deck": 0}
+            else:
+                out[str(did)] = {"deck_id": did, "name": name,
+                                 "new_count": node.new_count, "learn_count": node.learn_count,
+                                 "review_count": node.review_count,
+                                 "total_in_deck": node.total_in_deck}
         return out
     return await rt.service.run(fn)
 
@@ -923,7 +971,7 @@ async def deck_name_from_id(rt, deckId=None):
     return await rt.service.run(lambda col: col.decks.name(deckId))
 ```
 
-> **NOTE for the implementer:** `deck_due_tree()` nodes carry the **leaf** name (e.g. `Child`, not `Parent::Child`). The `getDeckStats` test only uses top-level `Default`, so leaf==full there. But the matching logic above is imperfect for sub-decks. During TDD, verify what `node.name` actually holds for a top-level deck (it should be `Default`); if sub-deck support is needed, match by reconstructing full paths or by `deck_id`. For B1, matching top-level decks by name is sufficient — make the test pass for `Default` and note the sub-deck caveat. If `node.name` for a top-level deck is NOT the full name, switch to: resolve each wanted name → `did = col.decks.id(name)`, then `node = col.decks.find_deck_in_tree(tree, did)` and read counts off that node (handle `None` → zeros).
+> **NOTE:** the deck-config existence guards use `_config_exists` because `col.decks.get_config(missing)` returns the Default config (id=1) in 25.9.4, not `None`. The read actions (`getDeckConfig`/`getDeckStats`) use `col.decks.id_for_name` (read-only) instead of `col.decks.id` (get-or-create) so a query never silently creates a deck. `getDeckStats` matches tree nodes by id via `find_deck_in_tree` (nodes carry leaf names), correct for sub-decks too.
 
 - [ ] **Step 4: Run to verify pass**
 
