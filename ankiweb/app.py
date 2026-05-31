@@ -28,4 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from ankiweb.assets import build_router as build_assets_router
     app.include_router(build_assets_router(settings.assets_dir))
 
+    from ankiweb.assets import build_media_router
+    app.include_router(build_media_router(lambda: app.state.service))
+
     return app

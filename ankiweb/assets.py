@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+from typing import Callable
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 
@@ -66,5 +67,24 @@ def build_router(assets_dir: Path) -> APIRouter:
         elif rel.endswith(".js"):
             headers["Cache-Control"] = "max-age=0"
         return FileResponse(target, media_type=_mime(rel), headers=headers)
+
+    return router
+
+
+def build_media_router(get_service: Callable) -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/{path:path}")
+    async def serve_media(path: str) -> Response:
+        service = get_service()  # lazy: service is created in lifespan, not import time
+        media_dir = Path(await service.run(lambda col: col.media.dir())).resolve()
+        target = (media_dir / path).resolve()
+        try:
+            target.relative_to(media_dir)
+        except ValueError:
+            return PlainTextResponse("forbidden", status_code=403)
+        if not target.is_file():
+            return PlainTextResponse("not found", status_code=404)
+        return FileResponse(target, media_type=_mime(path))
 
     return router
