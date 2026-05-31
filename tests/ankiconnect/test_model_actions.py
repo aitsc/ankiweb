@@ -118,3 +118,48 @@ def test_create_model_guards(client):
     empty = client.post("/", json={"action": "createModel", "version": 6, "params": {
         "modelName": "EmptyOne", "inOrderFields": [], "cardTemplates": []}})
     assert empty.json()["error"] is not None
+
+
+def _mk(client, name="MUT"):
+    _call(client, "createModel", modelName=name, inOrderFields=["A", "B"],
+          cardTemplates=[{"Name": "C1", "Front": "{{A}}", "Back": "{{B}}"}])
+    return name
+
+
+def test_field_mutators(client):
+    m = _mk(client, "MF")
+    assert _call(client, "modelFieldAdd", modelName=m, fieldName="C") is None
+    assert "C" in _call(client, "modelFieldNames", modelName=m)
+    assert _call(client, "modelFieldRename", modelName=m, oldFieldName="C", newFieldName="D") is None
+    assert "D" in _call(client, "modelFieldNames", modelName=m)
+    assert _call(client, "modelFieldReposition", modelName=m, fieldName="D", index=0) is None
+    assert _call(client, "modelFieldNames", modelName=m)[0] == "D"
+    assert _call(client, "modelFieldSetFont", modelName=m, fieldName="A", font="Courier") is None
+    assert _call(client, "modelFieldFonts", modelName=m)["A"]["font"] == "Courier"
+    assert _call(client, "modelFieldSetFontSize", modelName=m, fieldName="A", fontSize=30) is None
+    assert _call(client, "modelFieldFonts", modelName=m)["A"]["size"] == 30
+    assert _call(client, "modelFieldSetDescription", modelName=m, fieldName="A", description="d") is True
+    assert "d" in _call(client, "modelFieldDescriptions", modelName=m)
+    assert _call(client, "modelFieldRemove", modelName=m, fieldName="D") is None
+    assert "D" not in _call(client, "modelFieldNames", modelName=m)
+
+
+def test_template_mutators(client):
+    m = _mk(client, "MT")
+    assert _call(client, "modelTemplateAdd", modelName=m,
+                 template={"Name": "C2", "Front": "{{B}}", "Back": "{{A}}"}) is None
+    assert "C2" in _call(client, "modelTemplates", modelName=m)
+    assert _call(client, "modelTemplateRename", modelName=m,
+                 oldTemplateName="C2", newTemplateName="C3") is None
+    assert "C3" in _call(client, "modelTemplates", modelName=m)
+    assert _call(client, "modelTemplateReposition", modelName=m, templateName="C3", index=0) is None
+    assert list(_call(client, "modelTemplates", modelName=m).keys())[0] == "C3"
+    assert _call(client, "modelTemplateRemove", modelName=m, templateName="C3") is None
+    assert "C3" not in _call(client, "modelTemplates", modelName=m)
+
+
+def test_field_set_type_validation(client):
+    m = _mk(client, "MV")
+    bad = client.post("/", json={"action": "modelFieldSetFontSize", "version": 6,
+                                 "params": {"modelName": m, "fieldName": "A", "fontSize": "big"}})
+    assert bad.json()["error"] is not None

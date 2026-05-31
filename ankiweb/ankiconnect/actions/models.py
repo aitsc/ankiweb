@@ -206,3 +206,151 @@ async def find_and_replace_in_models(rt, modelName=None, findText=None, replaceT
                 updated += 1
         return updated, last_op  # run_emit tolerates last_op None (no model changed)
     return await run_emit(rt, fn)
+
+
+def _field_or_raise(m, name):
+    for f in m["flds"]:
+        if f["name"] == name:
+            return f
+    raise Exception("field was not found: " + str(name))
+
+
+def _template_or_raise(m, name):
+    for t in m["tmpls"]:
+        if t["name"] == name:
+            return t
+    raise Exception("template was not found: " + str(name))
+
+
+@action("modelTemplateAdd")
+async def model_template_add(rt, modelName=None, template=None):
+    template = template or {}
+    name = template["Name"]   # ref requires Name/Front/Back (1377-1397); KeyError if absent
+    front = template["Front"]
+    back = template["Back"]
+
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        for t in m["tmpls"]:        # update-in-place if a template with this name exists
+            if t["name"] == name:
+                t["qfmt"] = front
+                t["afmt"] = back
+                return None, col.models.update_dict(m)
+        t = col.models.new_template(name)
+        t["qfmt"] = front
+        t["afmt"] = back
+        col.models.add_template(m, t)
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelTemplateRemove")
+async def model_template_remove(rt, modelName=None, templateName=None):
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        col.models.remove_template(m, _template_or_raise(m, templateName))
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelTemplateRename")
+async def model_template_rename(rt, modelName=None, oldTemplateName=None, newTemplateName=None):
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        _template_or_raise(m, oldTemplateName)["name"] = newTemplateName
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelTemplateReposition")
+async def model_template_reposition(rt, modelName=None, templateName=None, index=None):
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        col.models.reposition_template(m, _template_or_raise(m, templateName), int(index))
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelFieldAdd")
+async def model_field_add(rt, modelName=None, fieldName=None, index=None):
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        f = col.models.new_field(fieldName)
+        col.models.add_field(m, f)
+        if index is not None:
+            col.models.reposition_field(m, f, int(index))
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelFieldRemove")
+async def model_field_remove(rt, modelName=None, fieldName=None):
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        col.models.remove_field(m, _field_or_raise(m, fieldName))
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelFieldRename")
+async def model_field_rename(rt, modelName=None, oldFieldName=None, newFieldName=None):
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        col.models.rename_field(m, _field_or_raise(m, oldFieldName), newFieldName)
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelFieldReposition")
+async def model_field_reposition(rt, modelName=None, fieldName=None, index=None):
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        col.models.reposition_field(m, _field_or_raise(m, fieldName), int(index))
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelFieldSetFont")
+async def model_field_set_font(rt, modelName=None, fieldName=None, font=None):
+    if not isinstance(font, str):   # ref 1469-1470
+        raise Exception("font should be a string")
+
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        _field_or_raise(m, fieldName)["font"] = font
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelFieldSetFontSize")
+async def model_field_set_font_size(rt, modelName=None, fieldName=None, fontSize=None):
+    if not isinstance(fontSize, int) or isinstance(fontSize, bool):   # ref 1483-1484
+        raise Exception("fontSize should be an integer")
+
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        _field_or_raise(m, fieldName)["size"] = fontSize
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("modelFieldSetDescription")
+async def model_field_set_description(rt, modelName=None, fieldName=None, description=None):
+    if not isinstance(description, str):   # ref 1497-1498
+        raise Exception("description should be a string")
+
+    def fn(col):
+        m = _model_or_raise(col, modelName)
+        _field_or_raise(m, fieldName)["description"] = description
+        return True, col.models.update_dict(m)  # 25.9.4 always has the 'description' key
+    return await run_emit(rt, fn)
