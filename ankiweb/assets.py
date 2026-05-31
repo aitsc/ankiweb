@@ -1,0 +1,70 @@
+from __future__ import annotations
+from pathlib import Path
+from fastapi import APIRouter, Request, Response
+from fastapi.responses import FileResponse, PlainTextResponse
+
+# subset of mediasrv _mime_for_path (mediasrv.py:171-210)
+MIME = {
+    ".css": "text/css", ".js": "application/javascript", ".mjs": "application/javascript",
+    ".html": "text/html", ".svg": "image/svg+xml", ".png": "image/png",
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp",
+    ".ico": "image/x-icon", ".json": "application/json", ".woff": "font/woff",
+    ".woff2": "font/woff2", ".ttf": "font/ttf", ".otf": "font/otf", ".map": "application/json",
+}
+SVELTEKIT_PAGES = {"graphs", "congrats", "card-info", "change-notetype", "deck-options",
+                   "import-anki-package", "import-csv", "import-page", "image-occlusion"}
+
+
+def _mime(path: str) -> str:
+    ext = "." + path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    return MIME.get(ext, "application/octet-stream")
+
+
+def _resolve(rel: str) -> str:
+    """Replicate mediasrv _extract_internal_request rewrites for the _anki/ namespace."""
+    first = rel.split("/", 1)[0]
+    if first in SVELTEKIT_PAGES:
+        return f"sveltekit/{rel}"
+    if rel.startswith("_app/"):
+        return f"sveltekit/{rel}"
+    if "/" not in rel:  # bare file at /_anki/<file>
+        if rel.endswith(".css"):
+            return f"css/{rel}"
+        if rel.endswith(".js"):
+            stem = rel[:-3].removesuffix(".min")  # jquery.min -> jquery
+            if stem in ("jquery", "jquery-ui", "plot"):
+                return f"js/vendor/{rel}"
+            return f"js/{rel}"
+    return rel
+
+
+def build_router(assets_dir: Path) -> APIRouter:
+    router = APIRouter()
+
+    @router.get("/_anki/{path:path}")
+    def serve(path: str, request: Request) -> Response:
+        rel = _resolve(path)
+        target = (assets_dir / rel).resolve()
+        try:
+            target.relative_to(assets_dir.resolve())
+        except ValueError:
+            return PlainTextResponse("forbidden", status_code=403)
+
+        if not target.is_file():
+            # SvelteKit SPA fallback for non-immutable sveltekit paths
+            if rel.startswith("sveltekit/") and "immutable" not in rel:
+                fallback = assets_dir / "sveltekit" / "index.html"
+                if fallback.is_file():
+                    return FileResponse(fallback, media_type="text/html")
+            return PlainTextResponse("not found", status_code=404)
+
+        headers = {}
+        if "immutable" in rel:
+            headers["Cache-Control"] = "max-age=31536000"
+        elif rel.endswith(".css"):
+            headers["Cache-Control"] = "max-age=10"
+        elif rel.endswith(".js"):
+            headers["Cache-Control"] = "max-age=0"
+        return FileResponse(target, media_type=_mime(rel), headers=headers)
+
+    return router
