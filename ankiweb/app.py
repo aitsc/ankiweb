@@ -14,6 +14,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await service.open()
         app.state.settings = settings
         app.state.service = service
+        from ankiweb.bridge.hub import BridgeHub
+        hub = BridgeHub()
+        app.state.hub = hub
+        service.subscribe(lambda flags, initiator:
+                          hub.broadcast_opchanges(flags, initiator))
         try:
             yield
         finally:
@@ -43,6 +48,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     from ankiweb.anki_rpc import build_router as build_rpc_router
     app.include_router(build_rpc_router(lambda: app.state.service))
+
+    from ankiweb.bridge.ws import build_router as build_ws_router
+    app.include_router(build_ws_router(lambda: app.state.hub))
 
     from ankiweb.assets import build_media_router
     app.include_router(build_media_router(lambda: app.state.service))
