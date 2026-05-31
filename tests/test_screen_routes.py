@@ -77,3 +77,11 @@ def test_overview_decks_navigates_home(client):
             msg = ws.receive_json()
         assert msg["fn"] == "ankiwebNavigate"
         assert msg["args"] == ["/deckbrowser"]
+
+
+def test_reviewer_placeholder(client):
+    r = client.get("/reviewer")
+    assert r.status_code == 200
+    assert 'window.__ankiwebContext="reviewer"' in r.text
+    # placeholder offers a way back to decks
+    assert "pycmd" in r.text and "decks" in r.text

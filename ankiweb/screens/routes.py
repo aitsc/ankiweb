@@ -22,9 +22,22 @@ def build_screen_router(get_service) -> APIRouter:
         body = await service.run(render_overview_html)
         return HTMLResponse(render_page("overview", body, ["css/overview.css"]))
 
+    @router.get("/reviewer", response_class=HTMLResponse)
+    async def reviewer_page():
+        body = ("<center><h2>Reviewer</h2>"
+                "<p>The study screen arrives in the next milestone.</p>"
+                "<button onclick='pycmd(\"decks\")'>Back to Decks</button></center>")
+        return HTMLResponse(render_page("reviewer", body, ["css/reviewer.css"]))
+
     return router
 
 
 def register_screen_handlers(service, hub) -> None:
     hub.set_handler("deckbrowser", make_deckbrowser_handler(service, hub))
     hub.set_handler("overview", make_overview_handler(service, hub))
+
+    async def reviewer_nav(arg: str):
+        if arg == "decks":
+            await hub.push_call("reviewer", "ankiwebNavigate", ["/deckbrowser"])
+        return None
+    hub.set_handler("reviewer", reviewer_nav)
