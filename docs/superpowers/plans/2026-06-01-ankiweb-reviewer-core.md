@@ -10,7 +10,7 @@
 
 **This is Plan 3 of 3 for Study Loop C** (Plan 4 = Reviewer Extras). Spec §6.3: `docs/superpowers/specs/2026-05-31-ankiweb-foundation-study-loop-design.md`.
 
-**Deliberate deferrals to Plan 4 (Reviewer Extras), NOT defects:** type-in-the-answer (`[[type:Field]]` filtering + `compare_answer` diff); `[sound:]` HTML5 audio + replay buttons; custom scheduling (`cardStateCustomizer` eval handshake + `getSchedulingStatesWithContext`/`setSchedulingStates` RPC handlers + per-session state-mutation key); auto-advance; the Edit-current-note button (`pycmd("edit")` — needs the editor, Plan D); reuse of the compiled `reviewer-bottom.js` bottom-bar bundle (Plan 3 uses a simpler server-driven answer bar). For Plan 3, cards with `[[type:...]]` will show the literal marker (acceptable — test uses plain Basic cards). TTS + voice recording remain out of scope entirely.
+**Deliberate deferrals to Plan 4 (Reviewer Extras), NOT defects:** type-in-the-answer (`[[type:Field]]` filtering + `compare_answer` diff); `[sound:]` HTML5 audio + replay buttons; custom scheduling (`cardStateCustomizer` eval handshake + `getSchedulingStatesWithContext`/`setSchedulingStates` RPC handlers + per-session state-mutation key); auto-advance; the Edit-current-note button (`pycmd("edit")` — needs the editor, Plan D); reuse of the compiled `reviewer-bottom.js` bottom-bar bundle (Plan 3 uses a simpler server-driven answer bar). For Plan 3, cards with `[[type:...]]` will show the literal marker (acceptable — test uses plain Basic cards). Also deferred (documented for a complete deferral set): **leech detection** (`col.sched.state_is_leech(new_state)` → tag/suspend feedback); the **non-v3 scheduler guard** (Anki's reviewer refuses sched_ver 1 — acceptable to skip since modern collections are v3-only, but no guard is added); **reviewer keyboard shortcuts** (Space = show-answer/Good, 1–4 = ease, `e` = edit, `r` = replay — client keydown→pycmd, added later); and **nightMode in the card bodyclass** (Plan 3 uses `card card{ord+1}` without the theme class). TTS + voice recording remain out of scope entirely.
 
 **Grounded facts (verified live against anki 25.9.4 in the env):**
 - `col.sched.get_queued_cards(fetch_limit=1)` → `QueuedCards{cards, new_count, learning_count, review_count}`; empty `cards` ⇒ finished.
@@ -394,7 +394,7 @@ def test_reviewer_ease_answers_and_shows_next(client):
         ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "show"})
         # drain the two pushes from show (_showQuestion + ankiwebSetAnswerBar)
         ws.receive_json(); ws.receive_json()
-        # answer Easy (ease4): a new card graduates to review (4d) → today's queue empties
+        # answer Easy (ease4): a new card graduates to review (multi-day) → today's queue empties
         # → reviewer navigates to /overview. (Good/ease3 would move it to learning, which
         # may still be queued, so use Easy for a deterministic "finished".)
         ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "ease4"})
@@ -405,7 +405,7 @@ def test_reviewer_ease_answers_and_shows_next(client):
                 nav = m["args"]; break
         assert nav == ["/overview"]
 ```
-(Note: `_seed` already exists in `tests/test_screen_routes.py` from Plan 2 — it adds one Basic card to Default. The `client` fixture there also calls `_seed` once in the fixture; for `test_reviewer_ease_answers_and_shows_next` the fixture's seeded card plus this one would be two cards. To make "answer the only card → finished" deterministic, this test relies on answering until the queue drains; the `for _ in range(5)` loop tolerates an intermediate next-question. If the fixture seeds a card, adjust: the loop drains question pushes until it sees the navigate. Keep the loop bound at a few iterations.)
+(Note: the Plan-2 `client` fixture in `tests/test_screen_routes.py` already seeds exactly ONE Basic card via `_seed`. `test_reviewer_ease_answers_and_shows_next` therefore must NOT seed again — it answers that single card with Easy (ease4), which graduates it out of today's queue so the reviewer finishes and navigates to `/overview`. The `for _ in range(5)` loop only needs to tolerate one intervening `opchanges` broadcast frame (from the `run_op` answer) before the `ankiwebNavigate` call. `test_reviewer_show_pushes_question` calls `_seed` once more, which is fine — it only needs a card to show.)
 
 - [ ] **Step 2: Run to verify failure**
 
@@ -458,7 +458,7 @@ def make_reviewer_handler(service, hub):
             await hub.push_call("reviewer", "_showAnswer", [info["a"]])
             await hub.push_call("reviewer", "ankiwebSetAnswerBar",
                                 [ease_buttons_bar(info["labels"])])
-        elif arg.startswith("ease") and arg[4:].isdigit():
+        elif arg in ("ease1", "ease2", "ease3", "ease4"):
             ease = int(arg[4:])
             await service.run_op(lambda col: answer_current(col, session, ease),
                                  initiator="reviewer")
@@ -495,7 +495,7 @@ def make_reviewer_handler(service, hub):
 - [ ] **Step 5: Run to verify pass**
 
 Run: `conda run -n ankiweb python -m pytest tests/test_reviewer.py tests/test_screen_routes.py -v`
-Expected: PASS. Then full suite: `conda run -n ankiweb python -m pytest -q` (the Plan 2 `test_reviewer_placeholder` test asserted the placeholder text "The study screen arrives…" — that test must be UPDATED or removed since the route now serves the real page; update it to assert the real page instead, e.g. assert `/_anki/js/reviewer.js` in the body. Make that edit in `tests/test_screen_routes.py` and re-run.)
+Expected: PASS. Then full suite: `conda run -n ankiweb python -m pytest -q`. **You MUST update the Plan-2 `test_reviewer_placeholder` test in `tests/test_screen_routes.py`** — its existing body is `assert r.status_code == 200`, `assert 'window.__ankiwebContext="reviewer"' in r.text`, and `assert "pycmd" in r.text and "decks" in r.text`. The real reviewer page has no "decks" control, so the `"decks" in r.text` assertion now FAILS. Simplest fix: **delete `test_reviewer_placeholder` entirely** (it is fully superseded by `test_reviewer_route_serves_real_page` added in Step 1). (Alternatively, replace its body with `assert r.status_code == 200; assert 'window.__ankiwebContext="reviewer"' in r.text; assert "/_anki/js/reviewer.js" in r.text`.) Then re-run the full suite.
 
 - [ ] **Step 6: Commit**
 
@@ -571,10 +571,13 @@ def test_study_one_card(live_server):
         page.wait_for_function("document.getElementById('qa').textContent.includes('Paris')",
                                timeout=6000)
         # four ease buttons appear with interval labels
-        page.wait_for_selector(".ease[data-ease='3']")
-        assert page.query_selector_count(".ease") == 4 if hasattr(page, "query_selector_count") else True
-        # rate Good → only card gone → navigates to /overview (Congrats)
-        page.click(".ease[data-ease='3']")
+        page.wait_for_selector(".ease[data-ease='4']")
+        assert page.locator(".ease").count() == 4
+        # rate Easy (ease4) → the lone new card graduates to review (multi-day) →
+        # today's queue empties → reviewer navigates to /overview (Congrats).
+        # (Good/ease3 would leave the card in the learning queue, re-fetched as the
+        # same card → it would never finish.)
+        page.click(".ease[data-ease='4']")
         page.wait_for_url("**/overview", timeout=6000)
         assert "Congratulations" in page.inner_text("body")
         browser.close()
@@ -596,7 +599,7 @@ git commit -m "test: reviewer integration — study a card end-to-end in a real 
 ```
 
 ## Context
-The capstone: proves the whole study loop works in a real browser — question rendered by Anki's real `reviewer.js`, answer revealed, ease buttons shown with intervals, answering advances/finishes the queue and navigates to Congrats. (`query_selector_count` may not exist on all Playwright versions; the `.ease[data-ease='3']` wait_for_selector is the load-bearing assertion — keep it, and the count assertion is best-effort.)
+The capstone: proves the whole study loop works in a real browser — question rendered by Anki's real `reviewer.js`, answer revealed, ease buttons shown with intervals, answering with **Easy (ease4)** finishes the queue and navigates to Congrats. The load-bearing assertions are `wait_for_function` on `#qa` text and `wait_for_url("**/overview")`; `page.locator(".ease").count()` is the canonical way to count the buttons (`query_selector_count` does NOT exist on the sync Playwright API).
 
 ## Report Format
 Report: Status, test result, any PAGEERROR + resolution, full-suite summary, files changed, commit SHA, concerns.
