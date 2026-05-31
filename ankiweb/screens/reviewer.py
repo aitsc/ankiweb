@@ -1,6 +1,31 @@
 from __future__ import annotations
 import html as _html
 from dataclasses import dataclass
+from anki.sound import SoundOrVideoTag, AV_REF_RE
+
+
+def render_av_buttons(text: str) -> str:
+    """Replace [anki:play:<side>:<N>] refs with inline replay buttons (pycmd('play:..'))."""
+    def repl(m):
+        ref = m.group(1)  # e.g. "play:q:0"
+        return ("<a class='replay-button soundLink' href=# "
+                f"onclick=\"pycmd('{ref}');return false;\"><span>&#9654;</span></a>")
+    return AV_REF_RE.sub(repl, text)
+
+
+def av_sound_filenames(card, question_side: bool) -> list:
+    """Ordered playable filenames for one side (SoundOrVideoTag only; TTS skipped)."""
+    tags = card.question_av_tags() if question_side else card.answer_av_tags()
+    return [t.filename for t in tags if isinstance(t, SoundOrVideoTag)]
+
+
+def answer_side_audio(card) -> list:
+    """Answer-side REPLAY list: question audio first if replayq, then answer audio."""
+    files = []
+    if card.replay_question_audio_on_answer_side():
+        files += av_sound_filenames(card, True)
+    files += av_sound_filenames(card, False)
+    return files
 
 
 @dataclass
@@ -25,13 +50,15 @@ def load_question(col, session: ReviewerSession) -> dict | None:
     session.card = card
     session.states = top.states
     session.context = top.context
-    return {"q": card.question(), "a": card.answer(), "bodyclass": f"card card{card.ord + 1}"}
+    return {"q": render_av_buttons(card.question()),
+            "a": render_av_buttons(card.answer()),
+            "bodyclass": f"card card{card.ord + 1}"}
 
 
 def render_answer(col, session: ReviewerSession) -> dict:
     """Render the answer side + the 4 ease interval labels [Again, Hard, Good, Easy]."""
     return {
-        "a": session.card.answer(),
+        "a": render_av_buttons(session.card.answer()),
         "labels": list(col.sched.describe_next_states(session.states)),
     }
 
@@ -107,6 +134,10 @@ def make_reviewer_handler(service, hub):
         await hub.push_call("reviewer", "_showQuestion",
                             [info["q"], info["a"], info["bodyclass"]])
         await hub.push_call("reviewer", "ankiwebSetAnswerBar", [show_answer_bar()])
+        q_files = await service.run(
+            lambda col: av_sound_filenames(session.card, True) if session.card.autoplay() else [])
+        if q_files:
+            await hub.push_call("reviewer", "ankiwebPlayAudio", [q_files])
 
     async def handler(arg: str):
         if arg == "show":
@@ -119,6 +150,10 @@ def make_reviewer_handler(service, hub):
             await hub.push_call("reviewer", "ankiwebSetAnswerBar",
                                 [ease_buttons_bar(info["labels"])])
             hub.ui_state.side = "answer"
+            a_files = await service.run(
+                lambda col: av_sound_filenames(session.card, False) if session.card.autoplay() else [])
+            if a_files:
+                await hub.push_call("reviewer", "ankiwebPlayAudio", [a_files])
         elif arg in ("ease1", "ease2", "ease3", "ease4"):
             if session.card is None:
                 return None
@@ -129,6 +164,28 @@ def make_reviewer_handler(service, hub):
         elif arg == "starttimer":
             if session.card is not None:
                 await service.run(lambda col: session.card.start_timer())
+        elif arg == "replay":
+            if session.card is not None:
+                is_answer = hub.ui_state.side == "answer"
+                files = await service.run(
+                    lambda col: answer_side_audio(session.card) if is_answer
+                    else av_sound_filenames(session.card, True))
+                if files:
+                    await hub.push_call("reviewer", "ankiwebPlayAudio", [files])
+        elif arg.startswith("play:"):
+            parts = arg.split(":")
+            if len(parts) == 3 and session.card is not None:
+                side, idx = parts[1], int(parts[2])
+
+                def one(col):
+                    tags = (session.card.question_av_tags() if side == "q"
+                            else session.card.answer_av_tags())
+                    if 0 <= idx < len(tags) and isinstance(tags[idx], SoundOrVideoTag):
+                        return [tags[idx].filename]
+                    return []
+                files = await service.run(one)
+                if files:
+                    await hub.push_call("reviewer", "ankiwebPlayAudio", [files])
         elif arg == "decks":
             await hub.push_call("reviewer", "ankiwebNavigate", ["/deckbrowser"])
         # ignore everything else (e.g. reviewer.js emits "updateToolbar" after each render)

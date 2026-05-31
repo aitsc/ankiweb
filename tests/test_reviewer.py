@@ -77,3 +77,11 @@ def test_reviewer_page_body_loads_qa_and_registers():
     assert "registerCalls" in body
     assert "_showQuestion" in body
     assert "pycmd('show')" in body
+
+
+def test_render_av_buttons_and_filenames():
+    from ankiweb.screens.reviewer import render_av_buttons
+    html = render_av_buttons("X [anki:play:q:0] Y [anki:play:a:1] Z")
+    assert "[anki:play" not in html
+    assert html.count("replay-button") == 2
+    assert "pycmd('play:q:0')" in html and "pycmd('play:a:1')" in html
