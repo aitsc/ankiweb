@@ -49,3 +49,40 @@ def render_deckbrowser_html(col) -> str:
     studied = f"<div id='studiedToday'><span>{html.escape(col.studied_today())}</span></div>"
     create = "<button onclick='ankiwebCreateDeck()'>Create Deck</button>"
     return f"<center>{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
+
+
+def make_deckbrowser_handler(service, hub):
+    """Returns an async bridge handler(arg) for the 'deckbrowser' context."""
+    async def handler(arg: str):
+        cmd, _, rest = arg.partition(":")
+        if cmd == "open" or cmd == "select":
+            did = int(rest)
+            await service.run_op(lambda col: col.decks.set_current(did), initiator="deckbrowser")
+            if cmd == "open":
+                await hub.push_call("deckbrowser", "ankiwebNavigate", ["/overview"])
+            else:
+                await hub.push_call("deckbrowser", "ankiwebReload", [])
+        elif cmd == "collapse":
+            did = int(rest)
+
+            def toggle(col):
+                from anki.decks import DeckCollapseScope
+                # Read persisted state from the deck dict, NOT the due-tree node:
+                # deck_due_tree() prunes empty decks, so a node may be missing.
+                collapsed = bool(col.decks.get(did).get("collapsed", False))
+                return col.decks.set_collapsed(did, not collapsed, DeckCollapseScope.REVIEWER)
+
+            await service.run_op(toggle, initiator="deckbrowser")
+            await hub.push_call("deckbrowser", "ankiwebReload", [])
+        elif cmd == "create":
+            name = rest.strip()
+            if name:
+                await service.run_op(
+                    lambda col: col.decks.add_normal_deck_with_name(name),
+                    initiator="deckbrowser",
+                )
+                await hub.push_call("deckbrowser", "ankiwebReload", [])
+        # 'opts' (gear menu) is deferred to a later plan; ignore for now.
+        return None
+
+    return handler

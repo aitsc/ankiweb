@@ -12,6 +12,7 @@ from ankiweb.bridge.hub import BridgeHub
 from ankiweb.assets import build_router as build_assets_router, build_media_router
 from ankiweb.anki_rpc import build_router as build_rpc_router
 from ankiweb.bridge.ws import build_router as build_ws_router
+from ankiweb.screens.routes import build_screen_router, register_screen_handlers
 
 _ALLOWED_HOST_PREFIXES = ("127.0.0.1:", "localhost:", "[::1]:")
 _ALLOWED_HOSTS = ("127.0.0.1", "localhost", "testserver")
@@ -29,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.settings = settings
         app.state.service = service
         app.state.hub = hub
+        register_screen_handlers(service, hub)
         try:
             yield
         finally:
@@ -70,6 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(build_assets_router(settings.assets_dir))       # GET  /_anki/{path}
     app.include_router(build_rpc_router(lambda: app.state.service))    # POST /_anki/{method}
     app.include_router(build_ws_router(lambda: app.state.hub))         # WS   /ws
+    app.include_router(build_screen_router(lambda: app.state.service))  # GET / and /deckbrowser
     app.include_router(build_media_router(lambda: app.state.service))  # GET  /{path} — LAST
 
     return app
