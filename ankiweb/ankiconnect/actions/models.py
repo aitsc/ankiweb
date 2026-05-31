@@ -1,6 +1,7 @@
 from __future__ import annotations
 import re
 from ankiweb.ankiconnect.registry import action
+from ankiweb.ankiconnect.actions._helpers import run_emit
 
 _FIELD_REF = re.compile(r"\{\{[#/^]?(?:[a-zA-Z0-9_-]+:)*([^{}:#/^]+?)\}\}")
 
@@ -109,3 +110,99 @@ async def model_name_from_id(rt, modelId=None):
             raise Exception("model was not found: " + str(modelId))
         return m["name"]
     return await rt.service.run(fn)
+
+
+@action("createModel")
+async def create_model(rt, modelName=None, inOrderFields=None, cardTemplates=None,
+                       css=None, isCloze=False):
+    inOrderFields = inOrderFields or []
+    cardTemplates = cardTemplates or []
+    # Reference guards (plugin/__init__.py:1120-1127): reject empty field/template lists.
+    if not inOrderFields:
+        raise Exception("Must provide at least one field for inOrderFields")
+    if not cardTemplates:
+        raise Exception("Must provide at least one card for cardTemplates")
+
+    def fn(col):
+        if modelName in [m.name for m in col.models.all_names_and_ids()]:
+            raise Exception("Model name already exists")  # ref 1126-1127
+        m = col.models.new(modelName)
+        for fname in inOrderFields:
+            col.models.add_field(m, col.models.new_field(fname))
+        for i, tmpl in enumerate(cardTemplates):
+            t = col.models.new_template(tmpl.get("Name", "Card %d" % (i + 1)))
+            t["qfmt"] = tmpl.get("Front", "")
+            t["afmt"] = tmpl.get("Back", "")
+            col.models.add_template(m, t)
+        if css is not None:
+            m["css"] = css
+        if isCloze:
+            m["type"] = 1
+        op = col.models.add_dict(m)
+        return col.models.get(op.id), op  # return the persisted model dict
+    return await run_emit(rt, fn)
+
+
+@action("updateModelTemplates")
+async def update_model_templates(rt, model=None):
+    model = model or {}
+
+    def fn(col):
+        m = _model_or_raise(col, model.get("name"))
+        templates = model.get("templates") or {}
+        for t in m["tmpls"]:
+            if t["name"] in templates:
+                upd = templates[t["name"]]
+                if upd.get("Front"):   # ref ignores empty-string Front/Back (1305/1309)
+                    t["qfmt"] = upd["Front"]
+                if upd.get("Back"):
+                    t["afmt"] = upd["Back"]
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("updateModelStyling")
+async def update_model_styling(rt, model=None):
+    model = model or {}
+
+    def fn(col):
+        m = _model_or_raise(col, model.get("name"))
+        m["css"] = model.get("css", "")
+        return None, col.models.update_dict(m)
+    await run_emit(rt, fn)
+    return None
+
+
+@action("findAndReplaceInModels")
+async def find_and_replace_in_models(rt, modelName=None, findText=None, replaceText=None,
+                                     front=True, back=True, css=True):
+    # Reference returns the number of MODELS updated (ref 1328-1353), not the
+    # occurrence count, and treats a falsy modelName as "all models".
+    def _replace(m):
+        changed = False
+        for t in m["tmpls"]:
+            if front and findText in t["qfmt"]:
+                t["qfmt"] = t["qfmt"].replace(findText, replaceText)
+                changed = True
+            if back and findText in t["afmt"]:
+                t["afmt"] = t["afmt"].replace(findText, replaceText)
+                changed = True
+        if css and findText in m["css"]:
+            m["css"] = m["css"].replace(findText, replaceText)
+            changed = True
+        return changed
+
+    def fn(col):
+        if modelName:
+            models = [_model_or_raise(col, modelName)]
+        else:
+            models = [col.models.get(nt.id) for nt in col.models.all_names_and_ids()]
+        updated = 0
+        last_op = None
+        for m in models:
+            if _replace(m):
+                last_op = col.models.update_dict(m)
+                updated += 1
+        return updated, last_op  # run_emit tolerates last_op None (no model changed)
+    return await run_emit(rt, fn)

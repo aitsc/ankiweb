@@ -70,3 +70,51 @@ def test_find_models_missing_raises(client):
                        ("modelNameFromId", {"modelId": 123})):
         r = client.post("/", json={"action": action, "version": 6, "params": kw})
         assert r.json()["error"] is not None
+
+
+def test_create_model(client):
+    res = _call(client, "createModel", modelName="MyModel",
+                inOrderFields=["A", "B"],
+                cardTemplates=[{"Name": "C1", "Front": "{{A}}", "Back": "{{FrontSide}}<hr>{{B}}"}],
+                css=".card{color:red}")
+    assert res["name"] == "MyModel"
+    assert _call(client, "modelFieldNames", modelName="MyModel") == ["A", "B"]
+    assert _call(client, "modelTemplates", modelName="MyModel")["C1"]["Front"] == "{{A}}"
+    assert "color:red" in _call(client, "modelStyling", modelName="MyModel")["css"]
+
+
+def test_create_cloze_model(client):
+    _call(client, "createModel", modelName="MyCloze", inOrderFields=["Text"],
+          cardTemplates=[{"Front": "{{cloze:Text}}", "Back": "{{cloze:Text}}"}], isCloze=True)
+    assert _call(client, "findModelsByName", modelNames=["MyCloze"])[0]["type"] == 1
+
+
+def test_update_model_templates_and_styling(client):
+    _call(client, "createModel", modelName="UM", inOrderFields=["A"],
+          cardTemplates=[{"Name": "C1", "Front": "{{A}}", "Back": "{{A}}"}])
+    assert _call(client, "updateModelTemplates",
+                 model={"name": "UM", "templates": {"C1": {"Front": "Q:{{A}}", "Back": "X"}}}) is None
+    assert _call(client, "modelTemplates", modelName="UM")["C1"]["Front"] == "Q:{{A}}"
+    assert _call(client, "updateModelStyling", model={"name": "UM", "css": ".x{}"}) is None
+    assert _call(client, "modelStyling", modelName="UM")["css"] == ".x{}"
+
+
+def test_find_and_replace_in_models(client):
+    _call(client, "createModel", modelName="FR", inOrderFields=["A"],
+          cardTemplates=[{"Name": "C1", "Front": "HELLO HELLO {{A}}", "Back": "{{A}}"}])
+    # returns the count of MODELS updated (==1), NOT the 2 occurrences replaced
+    n = _call(client, "findAndReplaceInModels", modelName="FR",
+              findText="HELLO", replaceText="HI", front=True, back=False, css=False)
+    assert n == 1
+    assert "HI HI" in _call(client, "modelTemplates", modelName="FR")["C1"]["Front"]
+
+
+def test_create_model_guards(client):
+    # duplicate name, empty fields, and empty templates all raise (ref 1120-1127)
+    dup = client.post("/", json={"action": "createModel", "version": 6, "params": {
+        "modelName": "Basic", "inOrderFields": ["X"],
+        "cardTemplates": [{"Name": "C", "Front": "{{X}}", "Back": "{{X}}"}]}})
+    assert dup.json()["error"] is not None
+    empty = client.post("/", json={"action": "createModel", "version": 6, "params": {
+        "modelName": "EmptyOne", "inOrderFields": [], "cardTemplates": []}})
+    assert empty.json()["error"] is not None
