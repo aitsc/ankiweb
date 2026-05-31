@@ -10,7 +10,7 @@
 
 **This is Plan 2 of 3 for Study Loop C.** Plan 3 (the Reviewer) follows. Spec: `docs/superpowers/specs/2026-05-31-ankiweb-foundation-study-loop-design.md` (§6.1 Deck Browser, §6.2 Overview, §6.4 Congrats). Run everything in the `ankiweb` conda env (e.g. `conda run -n ankiweb pytest`).
 
-**Deliberate deferrals (NOT defects), to later plans:** deck drag-drop reparent + the gear "opts" context menu (Plan E / polish); the real SvelteKit congrats page (Plan E builds the shared SvelteKit-serving infra — Plan 2 renders a simple server-side congrats); full i18n (screens use plain English labels; the SvelteKit pages already i18n via `i18nResources`); the actual Reviewer screen (Plan 3 — Plan 2 serves a placeholder so "Study Now" doesn't 404).
+**Deliberate deferrals (NOT defects), to later plans:** deck drag-drop reparent + the gear "opts" context menu (Plan E / polish); the real SvelteKit congrats page (Plan E builds the shared SvelteKit-serving infra — Plan 2 renders a simple server-side congrats); full i18n (screens use plain English labels; the SvelteKit pages already i18n via `i18nResources`); the actual Reviewer screen (Plan 3 — Plan 2 serves a placeholder so "Study Now" doesn't 404); the overview **buried ±N** count annotation (§6.2 — needs `deck_due_tree(current_id)` buried-difference; Plan 2 shows raw `counts()` + the Unbury button); the overview `http*` external-link command and deck-browser shift-click `select` wiring (neither fragment emits these yet — the `select` handler branch is kept for when the renderer wires shift-click).
 
 ---
 
@@ -99,7 +99,9 @@ Add this method to `CollectionService` (after `run`):
         broadcast the change flags on the bus. Returns the op result unchanged."""
         result = await self.run(fn)
         changes = getattr(result, "changes", result)
-        await self.emit(op_changes_to_flags(changes), initiator)
+        flags = op_changes_to_flags(changes)
+        if any(flags.values()):  # skip no-op broadcasts (e.g. set_current returns all-False)
+            await self.emit(flags, initiator)
         return result
 ```
 
@@ -292,6 +294,7 @@ git commit -m "feat: screens.page — shell HTML page wrapper"
 import tempfile, os
 import pytest
 from anki.collection import Collection
+from anki.decks import DeckCollapseScope
 from ankiweb.screens.deckbrowser import render_deckbrowser_html
 
 
@@ -320,8 +323,11 @@ def test_renders_default_deck_with_counts(col):
 
 
 def test_subdeck_indented_and_nested(col):
-    col.decks.id("Parent")
+    pid = col.decks.id("Parent")
     col.decks.id("Parent::Child")
+    # newly-created parent decks default to collapsed=True (children hidden), like Anki;
+    # expand it so the child row is rendered.
+    col.decks.set_collapsed(pid, False, DeckCollapseScope.REVIEWER)
     html = render_deckbrowser_html(col)
     assert "Parent" in html and "Child" in html
     # child name is leaf-only
@@ -456,8 +462,12 @@ def test_open_command_sets_current_and_navigates(client):
     did = client.portal.call(client.app.state.service.run, lambda col: col.decks.id("Default"))
     with client.websocket_connect("/ws?context=deckbrowser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "deckbrowser", "arg": f"open:{did}"})
+        # A run_op-backed command may also broadcast an {type:opchanges} frame; drain
+        # until the navigate call (set_current is all-False so usually no opchanges frame,
+        # but this is robust for any run_op-backed command).
         msg = ws.receive_json()
-        assert msg["type"] == "call"
+        while msg["type"] != "call":
+            msg = ws.receive_json()
         assert msg["fn"] == "ankiwebNavigate"
         assert msg["args"] == ["/overview"]
     # current deck is now Default
@@ -490,8 +500,9 @@ def make_deckbrowser_handler(service, hub):
 
             def toggle(col):
                 from anki.decks import DeckCollapseScope
-                node = col.decks.find_deck_in_tree(col.sched.deck_due_tree(), did)
-                collapsed = bool(node.collapsed) if node else False
+                # Read persisted state from the deck dict, NOT the due-tree node:
+                # deck_due_tree() prunes empty decks, so a node may be missing.
+                collapsed = bool(col.decks.get(did).get("collapsed", False))
                 return col.decks.set_collapsed(did, not collapsed, DeckCollapseScope.REVIEWER)
 
             await service.run_op(toggle, initiator="deckbrowser")
@@ -652,10 +663,12 @@ def _number_cell(n: int, cls: str) -> str:
 
 def render_overview_html(col) -> str:
     deck = col.decks.current()
-    if col.sched._is_finished():
+    new, learn, review = col.sched.counts()
+    if new + learn + review == 0:
+        # Nothing queued (counts already reflect limits/buried) → finished. Public-API
+        # alternative to the private col.sched._is_finished().
         return render_congrats_html(col)
 
-    new, learn, review = col.sched.counts()
     name = html.escape(deck["name"])
 
     desc = ""
@@ -765,16 +778,17 @@ def make_overview_handler(service, hub):
                 return col.sched.unbury_deck(col.decks.get_current_id(), UnburyDeck.Mode.ALL)
             await service.run_op(unbury, initiator="overview")
             await hub.push_call("overview", "ankiwebReload", [])
-        elif arg == "refresh":
-            await service.run_op(
-                lambda col: col.sched.rebuild_filtered_deck(col.decks.get_current_id()),
-                initiator="overview")
-            await hub.push_call("overview", "ankiwebReload", [])
-        elif arg == "empty":
-            await service.run_op(
-                lambda col: col.sched.empty_filtered_deck(col.decks.get_current_id()),
-                initiator="overview")
-            await hub.push_call("overview", "ankiwebReload", [])
+        elif arg in ("refresh", "empty"):
+            did = await service.run(lambda col: col.decks.get_current_id())
+            is_dyn = await service.run(lambda col: bool(col.decks.get(did).get("dyn")))
+            if is_dyn:  # rebuild/empty raise FilteredDeckError on a normal deck
+                if arg == "refresh":
+                    await service.run_op(lambda col: col.sched.rebuild_filtered_deck(did),
+                                         initiator="overview")
+                else:
+                    await service.run_op(lambda col: col.sched.empty_filtered_deck(did),
+                                         initiator="overview")
+                await hub.push_call("overview", "ankiwebReload", [])
         # 'opts' (deck options), 'studymore' (custom study), 'description' deferred to later plans.
         return None
 
