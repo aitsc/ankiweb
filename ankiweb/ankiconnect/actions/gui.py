@@ -142,3 +142,103 @@ async def gui_undo(rt):
 async def gui_check_database(rt):
     await rt.service.run(lambda col: col.fix_integrity())
     return True
+
+
+# ---------- degraded browser-domain actions (faithful to AnkiConnect's "no window" values) ----------
+@action("guiBrowse")
+async def gui_browse(rt, query=None, reorderCards=None):
+    if reorderCards is not None:  # reference checks 1-3; columnId-resolves (4) needs the table (Plan D)
+        if not isinstance(reorderCards, dict):
+            raise Exception("reorderCards should be a dict")
+        if "columnId" not in reorderCards or "order" not in reorderCards:
+            raise Exception('Must provide a "columnId" and an "order" property')
+        if reorderCards["order"] not in ("ascending", "descending"):
+            raise Exception("invalid card order: " + str(reorderCards["order"]))
+        # columnId validity is checked against the live Browser table → deferred to Plan D.
+    # findCards(None) returns [] (ref); only a real query searches.
+    cids = await rt.service.run(
+        lambda col: [] if query is None else list(col.find_cards(query)))
+    ui = _ui(rt)
+    ui.browser_open = True          # guiBrowse opens the Browser regardless of the query
+    ui.last_browse_query = query
+    ui.matched_card_ids = cids
+    return cids
+
+
+@action("guiSelectCard")
+async def gui_select_card(rt, card=None):
+    ui = _ui(rt)
+    if not ui.browser_open:   # no Browser window open → reference returns False
+        return False
+
+    def note_of(col):
+        try:
+            return col.get_card(card).nid
+        except Exception:
+            return None
+    nid = await rt.service.run(note_of)
+    ui.selected_card_ids = [card]
+    ui.selected_note_ids = [nid] if nid is not None else []
+    return True
+
+
+@action("guiSelectNote")
+async def gui_select_note(rt, note=None):
+    # deprecated alias: AnkiConnect forwards to guiSelectCard (selects by CARD id)
+    return await gui_select_card(rt, card=note)
+
+
+@action("guiSelectedNotes")
+async def gui_selected_notes(rt):
+    return list(_ui(rt).selected_note_ids)
+
+
+@action("guiPlayAudio")
+async def gui_play_audio(rt):
+    # [sound:] audio playback in the reviewer is deferred to Plan 4; preserve the contract:
+    # True while review is active (best-effort side effect), False otherwise.
+    return bool(_ui(rt).review_active)
+
+
+# ---------- deferred to Plan D (editor/import) — faithful stubs now ----------
+@action("guiAddNoteSetData")
+async def gui_add_note_set_data(rt, note=None, append=False):
+    # The Add Note editor dialog is Plan D; it is never open pre-D, so return exactly
+    # AnkiConnect's "dialog not open" payload.
+    return {"error": "Add Note dialog is not open", "code": 1}
+
+
+@action("guiEditNote")
+async def gui_edit_note(rt, note=None):
+    # No editor dialog yet (Plan D); reference returns null. No-op.
+    return None
+
+
+@action("guiAddCards")
+async def gui_add_cards(rt, note=None):
+    # The interactive Add dialog is Plan D. Preserve the contract (returns an int note id)
+    # without the surprising side effect of actually adding: validate deck/model/fields and
+    # return the prospective (unsaved) note id — like the reference, which returns the
+    # not-yet-saved ankiNote.id. The note is NOT added to the collection.
+    if note is None:
+        return 0  # blank dialog → fresh unsaved note (deferred to Plan D)
+
+    def build(col):
+        did = col.decks.id_for_name(note.get("deckName", ""))
+        if did is None:
+            raise Exception("deck was not found: " + str(note.get("deckName")))
+        n, _ = build_note(col, note)  # raises on unknown model/fields (faithful validation)
+        return n.id                   # unsaved note id (0 until added; dialog deferred to D)
+    return await rt.service.run(build)
+
+
+# ---------- server-incompatible (refuse / no-op) ----------
+@action("guiImportFile")
+async def gui_import_file(rt, path=None):
+    raise Exception("guiImportFile is not supported in ankiweb (no GUI file picker)")
+
+
+@action("guiExitAnki")
+async def gui_exit_anki(rt):
+    # Never shut down the shared local server on a client request (spec §4). No-op.
+    return None

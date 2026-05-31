@@ -107,3 +107,77 @@ def test_gui_deck_browser_pushes_navigate(client):
         while m["type"] != "call":
             m = ws.receive_json()
         assert m["fn"] == "ankiwebNavigate" and m["args"] == ["/deckbrowser"]
+
+
+def test_gui_browse_returns_findcards_and_records(client):
+    cids = _gui(client, "guiBrowse", query="deck:Default")
+    assert isinstance(cids, list) and len(cids) >= 1
+    assert client.app.state.hub.ui_state.last_browse_query == "deck:Default"
+    assert client.app.state.hub.ui_state.matched_card_ids == cids
+    assert client.app.state.hub.ui_state.browser_open is True
+
+
+def test_gui_browse_no_query_returns_empty(client):
+    # findCards(None) returns [] in AnkiConnect; guiBrowse with no query must too,
+    # while still "opening" the Browser (so guiSelectCard works afterward).
+    assert _gui(client, "guiBrowse") == []
+    assert client.app.state.hub.ui_state.browser_open is True
+
+
+def test_gui_browse_reorder_validation(client):
+    with pytest.raises(Exception):
+        _gui(client, "guiBrowse", query="", reorderCards={"order": "sideways"})
+    assert isinstance(_gui(client, "guiBrowse", query="",
+                            reorderCards={"columnId": "noteFld", "order": "descending"}), list)
+
+
+def test_gui_select_and_selected_notes(client):
+    assert _gui(client, "guiSelectedNotes") == []
+    cids = _gui(client, "guiBrowse", query="deck:Default")  # "opens" the browser domain
+    assert _gui(client, "guiSelectCard", card=cids[0]) is True
+    nids = _gui(client, "guiSelectedNotes")
+    assert len(nids) == 1 and isinstance(nids[0], int)
+    assert _gui(client, "guiSelectNote", note=cids[0]) is True
+
+
+def test_gui_select_card_false_without_browse(client):
+    assert _gui(client, "guiSelectCard", card=12345) is False
+
+
+def test_gui_play_audio(client):
+    assert _gui(client, "guiPlayAudio") is False     # not reviewing
+    _select_default(client)
+    _drive(client, "show")
+    assert _gui(client, "guiPlayAudio") is True       # reviewing -> faithful True
+
+
+def test_gui_add_note_set_data_stub(client):
+    res = _gui(client, "guiAddNoteSetData",
+               note={"deckName": "Default", "modelName": "Basic", "fields": {"Front": "x"}})
+    assert res == {"error": "Add Note dialog is not open", "code": 1}
+
+
+def test_gui_edit_note_noop(client):
+    assert _gui(client, "guiEditNote", note=123) is None
+
+
+def test_gui_add_cards_returns_int_and_validates(client):
+    res = _gui(client, "guiAddCards",
+               note={"deckName": "Default", "modelName": "Basic", "fields": {"Front": "x"}})
+    assert isinstance(res, int)
+    assert isinstance(_gui(client, "guiAddCards"), int)   # blank dialog form
+    with pytest.raises(Exception):
+        _gui(client, "guiAddCards",
+             note={"deckName": "No Such Deck", "modelName": "Basic", "fields": {"Front": "x"}})
+    with pytest.raises(Exception):
+        _gui(client, "guiAddCards",
+             note={"deckName": "Default", "modelName": "No Such Model", "fields": {}})
+
+
+def test_gui_import_file_refuses(client):
+    with pytest.raises(Exception):
+        _gui(client, "guiImportFile", path="/tmp/x.apkg")
+
+
+def test_gui_exit_anki_noop(client):
+    assert _gui(client, "guiExitAnki") is None
