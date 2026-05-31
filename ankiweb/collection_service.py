@@ -4,8 +4,18 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, TypeVar
 from anki.collection import Collection
 from ankiweb.config import Settings
+from google.protobuf.descriptor import FieldDescriptor
 
 T = TypeVar("T")
+
+
+def op_changes_to_flags(changes) -> dict:
+    """Convert an OpChanges proto into a {field_name: bool} dict (only its bool fields)."""
+    return {
+        f.name: getattr(changes, f.name)
+        for f in changes.DESCRIPTOR.fields
+        if f.type == FieldDescriptor.TYPE_BOOL
+    }
 
 
 class CollectionService:
@@ -44,6 +54,16 @@ class CollectionService:
                 raise RuntimeError("collection not open")
             loop = asyncio.get_running_loop()
             return await loop.run_in_executor(self._executor, lambda: fn(col))
+
+    async def run_op(self, fn: Callable[[Collection], T], initiator: str | None = None) -> T:
+        """Run a mutating op (fn returns OpChanges or an OpChanges* wrapper), then
+        broadcast the change flags on the bus. Returns the op result unchanged."""
+        result = await self.run(fn)
+        changes = getattr(result, "changes", result)
+        flags = op_changes_to_flags(changes)
+        if any(flags.values()):  # skip no-op broadcasts (e.g. set_current returns all-False)
+            await self.emit(flags, initiator)
+        return result
 
     async def backend_raw(self, method: str, data: bytes) -> bytes:
         def fn(col):

@@ -44,3 +44,35 @@ async def test_opchanges_bus_notifies_subscribers(service):
     service.subscribe(lambda changes, initiator: seen.append((changes, initiator)))
     await service.emit(changes={"note": True}, initiator="t1")
     assert seen == [({"note": True}, "t1")]
+
+
+def test_op_changes_to_flags():
+    from ankiweb.collection_service import op_changes_to_flags
+    from anki.collection import Collection
+    import tempfile, os
+    col = Collection(os.path.join(tempfile.mkdtemp(), "c.anki2"))
+    try:
+        n = col.new_note(col.models.by_name("Basic")); n["Front"] = "x"
+        res = col.add_note(n, col.decks.id("Default"))  # OpChangesWithCount
+        flags = op_changes_to_flags(res.changes)
+        assert flags["note"] is True
+        assert flags["card"] is True
+        assert isinstance(flags.get("study_queues"), bool)
+    finally:
+        col.close()
+
+
+async def test_run_op_emits_flags(service):
+    seen = []
+    service.subscribe(lambda flags, initiator: seen.append((flags, initiator)))
+
+    def add(col):
+        n = col.new_note(col.models.by_name("Basic")); n["Front"] = "y"
+        return col.add_note(n, col.decks.id("Default"))
+
+    res = await service.run_op(add, initiator="deckbrowser")
+    assert res.count == 1                      # OpChangesWithCount passthrough return
+    assert len(seen) == 1
+    flags, initiator = seen[0]
+    assert initiator == "deckbrowser"
+    assert flags["note"] is True
