@@ -13,7 +13,7 @@
 **Scope (verified by recon).** The complete gui* set is 21 actions. Four "misc/profile" actions (`reloadCollection`, `getProfiles`, `getActiveProfile`, `loadProfile`) are ALREADY shipped in B1 (`actions/meta.py`) — do NOT touch them. B4 implements the remaining **18 gui\* actions**, classified:
 - **supportable-now (11):** guiReviewActive, guiCurrentCard, guiStartCardTimer, guiShowQuestion, guiShowAnswer, guiAnswerCard, guiDeckBrowser, guiDeckOverview, guiDeckReview, guiUndo, guiCheckDatabase.
 - **degraded-now (5):** guiBrowse (returns the real `findCards` result; records query+matches), guiSelectCard, guiSelectNote (deprecated alias), guiSelectedNotes, guiPlayAudio (best-effort; faithful bool).
-- **deferred-to-D / refuse (4, faithful stubs now):** guiAddCards, guiEditNote, guiAddNoteSetData (need Plan D's editor); guiImportFile (no server file picker); guiExitAnki (never shut the shared server). guiExitAnki is no-op-returns-None per spec §4.
+- **deferred-to-D / refuse (faithful stubs now):** guiAddCards (validates deck/model, returns the prospective int note id WITHOUT adding — the dialog is deferred to D), guiEditNote (returns None), guiAddNoteSetData (returns the exact "Add Note dialog is not open" error dict — always true pre-D); guiImportFile (refuses — no server file picker); guiExitAnki (no-op-returns-None per spec §4 — never shut the shared server).
 
 **Faithfulness principle for degraded actions:** where AnkiConnect's value depends only on the collection (guiBrowse→findCards) we return the REAL value; where it depends on a live Browser window we return exactly the value AnkiConnect returns when *no Browser is open* (`False` / `[]` / recorded-selection) — a legitimate runtime state, not a fake.
 
@@ -26,7 +26,7 @@
 - `ankiweb/bridge/hub.py` — `BridgeHub`: `_conns: dict[ctx,[ws]]`, `register/unregister`, `set_handler`, `push_call(ctx,fn,args)`, `eval_with_callback`, `broadcast_opchanges`, `dispatch_cmd(ctx,arg)`→`await handler(arg)`. **B4 adds `self.ui_state` + sets `current_screen` in `dispatch_cmd`.**
 - `ankiweb/bridge/ws.py` — `ws_endpoint(websocket, context="default")` registers per ctx, routes `cmd`→`dispatch_cmd`. **B4 sets `current_screen` on connect.**
 - `ankiweb/screens/reviewer.py` — `make_reviewer_handler(service, hub)` owns ONE closure-local `ReviewerSession`; `_show_next()` loads/pushes the question; handler args `show`/`ans`/`ease1..4`/`decks`. **B4 writes `hub.ui_state.current_card_id`/`side` here + adds a `starttimer` arg.**
-- `ankiweb/ankiconnect/app.py` — per-request `rt = Runtime(service, config, hub=app.state.hub)`. **B4 resolves `hub = hub or BridgeHub()` so `rt.hub` is never None and `rt.hub.ui_state` always exists.**
+- `ankiweb/ankiconnect/app.py` — per-request `rt = Runtime(service=app.state.service, config=app.state.config, hub=app.state.hub)` (line 71, unchanged). **B4 resolves `hub = hub if hub is not None else BridgeHub()` at function scope (after `owns_service`); the lifespan closure stores that resolved hub as `app.state.hub`, so `rt.hub` is never None and `rt.hub.ui_state` always exists.**
 - `ankiweb/ankiconnect/actions/_helpers.py` — `run_emit(rt, fn)` (fn→(value, op); broadcasts; None-safe). **Reused by guiUndo.**
 - `ankiweb/screens/routes.py::register_screen_handlers(service, hub)` — registers deckbrowser/overview/reviewer handlers (called by `create_app` lifespan). gui* reviewer-control reuses these via `dispatch_cmd`.
 
@@ -69,6 +69,7 @@ from ankiweb.bridge.hub import BridgeHub
 def test_ui_state_defaults_and_review_active():
     s = UiState()
     assert s.current_screen is None and s.current_card_id is None and s.side is None
+    assert s.browser_open is False
     assert s.matched_card_ids == [] and s.selected_note_ids == []
     assert s.review_active is False
     s.current_screen = "reviewer"
@@ -153,7 +154,8 @@ class UiState:
     current_screen: str | None = None        # 'deckbrowser'|'overview'|'reviewer'|'congrats'
     current_card_id: int | None = None        # reviewer's in-flight card
     side: str | None = None                   # 'question'|'answer'|None
-    last_browse_query: str | None = None      # set by guiBrowse (degraded "browser open")
+    browser_open: bool = False                # set True by guiBrowse (degraded "Browser window")
+    last_browse_query: str | None = None      # the last guiBrowse query (may be None)
     matched_card_ids: list = field(default_factory=list)
     selected_card_ids: list = field(default_factory=list)
     selected_note_ids: list = field(default_factory=list)
@@ -391,7 +393,7 @@ Expected: FAIL (gui actions not registered → KeyError in `_run`).
 ```python
 from __future__ import annotations
 from ankiweb.ankiconnect.registry import action
-from ankiweb.ankiconnect.actions._helpers import run_emit
+from ankiweb.ankiconnect.actions._helpers import run_emit, build_note
 
 
 def _ui(rt):
@@ -412,10 +414,18 @@ async def gui_current_card(rt):
     cid = ui.current_card_id
 
     def build(col):
+        # nextReviews: prefer the queued top card's states (the reviewer-faithful source);
+        # if the queue top has drifted from the mirror, fall back to get_scheduling_states.
         labels = []
         queued = col.sched.get_queued_cards(fetch_limit=1)
         if queued.cards and queued.cards[0].card.id == cid:
             labels = list(col.sched.describe_next_states(queued.cards[0].states))
+        else:
+            try:
+                labels = list(col.sched.describe_next_states(
+                    col._backend.get_scheduling_states(cid)))
+            except Exception:
+                labels = []
         card = col.get_card(cid)
         note = card.note()
         model = note.note_type()
@@ -427,7 +437,7 @@ async def gui_current_card(rt):
             "fieldOrder": card.ord,
             "question": card.question(),
             "answer": card.answer(),
-            "buttons": list(range(1, len(labels) + 1)),
+            "buttons": [1, 2, 3, 4],          # v3 always has 4 answer buttons (shape-stable, ref-faithful)
             "nextReviews": labels,
             "modelName": model["name"],
             "deckName": col.decks.name(card.did),
@@ -467,6 +477,8 @@ async def gui_answer_card(rt, ease=None):
     ui = _ui(rt)
     if not ui.review_active or ui.side != "answer":
         return False
+    # v3 answerButtons() is hardcoded to 4 in anki 25.9.4 (matches the reference's dynamic
+    # check here); also reject bool/non-int ease (a hardening over the reference).
     if not isinstance(ease, int) or isinstance(ease, bool) or not (1 <= ease <= 4):
         return False
     await rt.hub.dispatch_cmd("reviewer", f"ease{ease}")
@@ -510,9 +522,13 @@ async def gui_deck_review(rt, name=None):
 @action("guiUndo")
 async def gui_undo(rt):
     def do(col):
+        from anki.errors import UndoEmpty
         if not col.undo_status().undo:
             return True, None          # nothing to undo → no-op (mw.undo is a no-op)
-        return True, col.undo()
+        try:
+            return True, col.undo()
+        except UndoEmpty:              # undo_status can report a label yet undo() still be empty
+            return True, None
     return await run_emit(rt, do)
 
 
@@ -530,7 +546,7 @@ from ankiweb.ankiconnect.actions import meta, decks, notes, cards, models, media
 - [ ] **Step 5: Run to verify pass**
 
 Run: `conda run -n ankiweb python -m pytest tests/ankiconnect/test_gui_actions.py -v`
-Expected: PASS. (If `guiCurrentCard` `nextReviews` is not length-4 for a fresh new card, introspect `describe_next_states` for the queued card — the reviewer's `render_answer` uses the same call, so it should yield 4 labels.)
+Expected: PASS. (`describe_next_states` returns 4 labels for every card type under the v3 scheduler — verified for new/learning/review/cloze — so `len(nextReviews)==4` and `buttons==[1,2,3,4]` hold for any card.)
 
 - [ ] **Step 6: Commit**
 ```bash
@@ -557,9 +573,17 @@ Report: Status, pytest summary, files changed, self-review, commit SHA, concerns
 def test_gui_browse_returns_findcards_and_records(client):
     cids = _gui(client, "guiBrowse", query="deck:Default")
     assert isinstance(cids, list) and len(cids) >= 1
-    # the query + matches are recorded in the mirror
+    # the query + matches are recorded in the mirror; the Browser is "open"
     assert client.app.state.hub.ui_state.last_browse_query == "deck:Default"
     assert client.app.state.hub.ui_state.matched_card_ids == cids
+    assert client.app.state.hub.ui_state.browser_open is True
+
+
+def test_gui_browse_no_query_returns_empty(client):
+    # findCards(None) returns [] in AnkiConnect; guiBrowse with no query must too,
+    # while still "opening" the Browser (so guiSelectCard works afterward).
+    assert _gui(client, "guiBrowse") == []
+    assert client.app.state.hub.ui_state.browser_open is True
 
 
 def test_gui_browse_reorder_validation(client):
@@ -583,7 +607,7 @@ def test_gui_select_and_selected_notes(client):
 
 
 def test_gui_select_card_false_without_browse(client):
-    # fresh mirror: nothing browsed -> no browser open -> False (reference behavior)
+    # fresh mirror: browser_open is False -> no browser open -> False (reference behavior)
     assert _gui(client, "guiSelectCard", card=12345) is False
 
 
@@ -604,10 +628,22 @@ def test_gui_edit_note_noop(client):
     assert _gui(client, "guiEditNote", note=123) is None
 
 
-def test_gui_add_cards_and_import_refuse(client):
+def test_gui_add_cards_returns_int_and_validates(client):
+    # faithful shape: returns an int note id (note is validated but NOT added pre-D)
+    res = _gui(client, "guiAddCards",
+               note={"deckName": "Default", "modelName": "Basic", "fields": {"Front": "x"}})
+    assert isinstance(res, int)
+    assert isinstance(_gui(client, "guiAddCards"), int)   # blank dialog form
+    # unknown deck / model still raise (matches the reference's validation)
     with pytest.raises(Exception):
         _gui(client, "guiAddCards",
-             note={"deckName": "Default", "modelName": "Basic", "fields": {"Front": "x"}})
+             note={"deckName": "No Such Deck", "modelName": "Basic", "fields": {"Front": "x"}})
+    with pytest.raises(Exception):
+        _gui(client, "guiAddCards",
+             note={"deckName": "Default", "modelName": "No Such Model", "fields": {}})
+
+
+def test_gui_import_file_refuses(client):
     with pytest.raises(Exception):
         _gui(client, "guiImportFile", path="/tmp/x.apkg")
 
@@ -626,16 +662,20 @@ Expected: FAIL.
 # ---------- degraded browser-domain actions (faithful to AnkiConnect's "no window" values) ----------
 @action("guiBrowse")
 async def gui_browse(rt, query=None, reorderCards=None):
-    if reorderCards is not None:
-        if (not isinstance(reorderCards, dict) or "columnId" not in reorderCards
-                or reorderCards.get("order") not in ("ascending", "descending")):
-            raise Exception(
-                "reorderCards must be a dict with 'columnId' and 'order' "
-                "('ascending'|'descending')")
-        # No Browser table yet (Plan D) → ordering is a no-op; the returned ids are unsorted.
-    cids = await rt.service.run(lambda col: list(col.find_cards(query or "")))
+    if reorderCards is not None:  # reference checks 1-3 (ref 1795-1807); columnId-resolves (4) needs the table (Plan D)
+        if not isinstance(reorderCards, dict):
+            raise Exception("reorderCards should be a dict")
+        if "columnId" not in reorderCards or "order" not in reorderCards:
+            raise Exception('Must provide a "columnId" and an "order" property')
+        if reorderCards["order"] not in ("ascending", "descending"):
+            raise Exception("invalid card order: " + str(reorderCards["order"]))
+        # columnId validity is checked against the live Browser table → deferred to Plan D.
+    # findCards(None) returns [] (ref cards.py); only a real query searches.
+    cids = await rt.service.run(
+        lambda col: [] if query is None else list(col.find_cards(query)))
     ui = _ui(rt)
-    ui.last_browse_query = query or ""
+    ui.browser_open = True          # guiBrowse opens the Browser regardless of the query
+    ui.last_browse_query = query
     ui.matched_card_ids = cids
     return cids
 
@@ -643,7 +683,7 @@ async def gui_browse(rt, query=None, reorderCards=None):
 @action("guiSelectCard")
 async def gui_select_card(rt, card=None):
     ui = _ui(rt)
-    if ui.last_browse_query is None:   # no Browser "open" → reference returns False
+    if not ui.browser_open:   # no Browser window open → reference returns False
         return False
 
     def note_of(col):
@@ -691,9 +731,20 @@ async def gui_edit_note(rt, note=None):
 
 @action("guiAddCards")
 async def gui_add_cards(rt, note=None):
-    raise Exception(
-        "guiAddCards requires the editor UI (Plan D) and is not yet supported; "
-        "use the addNote action to add cards via the API")
+    # The interactive Add dialog is Plan D. Preserve the contract (returns an int note id)
+    # without the surprising side effect of actually adding: validate deck/model/fields and
+    # return the prospective (unsaved) note id — like the reference, which returns the
+    # not-yet-saved ankiNote.id. The note is NOT added to the collection.
+    if note is None:
+        return 0  # blank dialog → fresh unsaved note (deferred to Plan D)
+
+    def build(col):
+        did = col.decks.id_for_name(note.get("deckName", ""))
+        if did is None:
+            raise Exception("deck was not found: " + str(note.get("deckName")))
+        n, _ = build_note(col, note)  # raises on unknown model/fields (faithful validation)
+        return n.id                   # unsaved note id (0 until added; dialog deferred to D)
+    return await rt.service.run(build)
 
 
 # ---------- server-incompatible (refuse / no-op) ----------
@@ -721,7 +772,7 @@ git -c user.name="tsc" -c user.email="xxj.tan@gmail.com" commit -m "feat(ankicon
 ```
 
 ## Context
-`guiBrowse` returns the REAL `findCards(query)` (its entire contract for clients like Yomitan) and records query+matches into the mirror so `guiSelectCard`/`guiSelectedNotes` have a domain; a malformed `reorderCards` raises like the reference, and ordering is a no-op without a table. `guiSelectCard`/`guiSelectNote`/`guiSelectedNotes` return exactly AnkiConnect's "no Browser open" values (`False`/`[]`) until a `guiBrowse` "opens" the domain. The three Plan-D-coupled actions return faithful stubs (the exact `{"error":..., "code":1}` payload, `None`, or a clear error pointing at `addNote`). `guiImportFile`/`guiExitAnki` refuse/no-op per spec §4.
+`guiBrowse` returns the REAL `findCards(query)` (its entire contract for clients like Yomitan) — `query=None`→`[]` exactly like the reference — sets `browser_open=True`, and records query+matches into the mirror so `guiSelectCard`/`guiSelectedNotes` have a domain; `reorderCards` validation mirrors the reference's checks 1-3 (the columnId-resolves check needs the table → Plan D). `guiSelectCard`/`guiSelectNote`/`guiSelectedNotes` return exactly AnkiConnect's "no Browser open" values (`False`/`[]`) until a `guiBrowse` opens the domain (`browser_open`). The Plan-D-coupled actions preserve faithful shapes: `guiAddCards` validates deck/model and returns the prospective int note id (no add); `guiAddNoteSetData` returns the exact `{"error":"Add Note dialog is not open","code":1}` payload; `guiEditNote` returns `None`. `guiImportFile` refuses; `guiExitAnki` no-ops per spec §4.
 
 ## Report Format
 Report: Status, gui + full-suite pytest summaries, files changed, self-review, commit SHA, concerns.
@@ -736,4 +787,6 @@ Report: Status, gui + full-suite pytest summaries, files changed, self-review, c
 
 **3. Type/name consistency:** `_ui(rt)`→`rt.hub.ui_state` (a `UiState`); `run_emit` (from `_helpers`, B2/B3) reused by guiUndo (`col.undo()`→OpChangesAfterUndo has `.changes`). All actions `async def(rt, **params)` with kwargs matching AnkiConnect names (name, ease, query, reorderCards, card, note, append, path). Reviewer-control reuses `hub.dispatch_cmd("reviewer", "show"|"ans"|"ease{n}"|"starttimer")` — `starttimer` is the only new reviewer command added in Task 1. `current_screen` written in `dispatch_cmd` (hub) + WS connect (ws.py); `current_card_id`/`side` written by the reviewer handler. `create_ankiconnect_app` resolves `hub = hub or BridgeHub()` so `rt.hub.ui_state` is never None. `actions/__init__` imports meta/decks/notes/cards/models/media/gui.
 
-**4. Risks & mitigations:** (a) `current_screen` can go stale if a tab closes without navigating — acceptable for single-user local; overwritten on next interaction; `review_active` also requires `current_card_id` which the reviewer clears on finish. (b) `guiCurrentCard` recomputes labels from `get_queued_cards` rather than the closure `ReviewerSession.states` — identical source, avoids hoisting the session. (c) reviewer-control actions need the reviewer handler registered on the shared hub — true in production (`create_app` lifespan) and in the tests (web-app TestClient). (d) standalone ankiconnect apps get a private hub with no reviewer handler → reviewer-control returns faithful `False` (review not active), which is correct.
+**4. Risks & mitigations:** (a) `current_screen` can go stale if a tab closes without navigating — acceptable for single-user local; overwritten on next interaction; `review_active` also requires `current_card_id` which the reviewer clears on finish. (b) `guiCurrentCard` recomputes labels from `get_queued_cards` (queue top == current card) with a `get_scheduling_states` fallback; `buttons` is hardcoded `[1,2,3,4]` (v3 always has 4 — verified) so the shape is stable like the reference. (c) reviewer-control actions need the reviewer handler registered on the shared hub — true in production (`create_app` lifespan) and in the tests (web-app TestClient). (d) standalone ankiconnect apps get a private hub with no reviewer handler → reviewer-control returns faithful `False` (review not active), which is correct.
+
+**5. Adversarial verification (3-agent Workflow vs live anki 25.9.4 + reference plugin + existing code):** anki-reviewer-flow RAN PROBES and confirmed ALL load-bearing assumptions: `get_queued_cards(fetch_limit=1)` top == current card and doesn't advance until answered; `describe_next_states` returns EXACTLY 4 labels for new/learning/review/cloze under v3 (so `buttons==[1,2,3,4]` holds); `col.undo()` raises `anki.errors.UndoEmpty` when empty (the guard is load-bearing) and returns `OpChangesAfterUndo` (has `.changes` → run_emit works); `col.fix_integrity()`→`(str,bool)` no-raise; `card.template()["name"]`, `card.start_timer()`, `set_current`→all-False OpChanges (so `run` not `run_op`), `startTimebox`, `id_for_name` all confirmed. consistency confirmed every edit anchor matches byte-for-byte, no circular import (ui_state→stdlib only), `portal.call(fn, *args)` forwards extra positional args (so the test helper is valid), and `dispatch_cmd` is untested elsewhere so unconditionally setting `current_screen` breaks nothing. contract fixes FOLDED IN: guiBrowse `query=None`→`[]` (+`browser_open` flag for the select gate); guiAddCards returns a faithful int note id (validates, no add) instead of raising; guiCurrentCard shape-stable `buttons`/`nextReviews`; reorderCards 3-check validation; guiUndo `UndoEmpty` hardening. **Confirmed-equivalent (no change):** hardcoded `1<=ease<=4` matches the reference's `answerButtons()` (hardcoded 4 in v3); `'buttons'` as ease values `[1,2,3,4]` matches `[b[0] for b in _answerButtonList()]`; guiShowQuestion re-fetch/timer-restart is an accepted bridge-architecture divergence (re-render == re-show).
