@@ -73,3 +73,31 @@ def test_add_notes_errors_and_rolls_back_on_any_failure(client):
 def test_can_add_notes_batch(client):
     res = _call(client, "canAddNotes", notes=[_basic(front="ok"), _basic(front="")])
     assert res == [True, False]
+
+
+def _err(client, action, **params):
+    r = client.post("/", json={"action": action, "version": 6, "params": params})
+    return r.json()["error"]
+
+
+def test_update_note_fields_and_tags(client):
+    nid = _call(client, "addNote", note=_basic(front="u1"))
+    assert _call(client, "updateNoteFields",
+                 note={"id": nid, "fields": {"Back": "newback"}}) is None
+    info = _call(client, "notesInfo", notes=[nid])[0]
+    assert info["fields"]["Back"]["value"] == "newback"
+    assert _call(client, "updateNote", note={"id": nid, "tags": ["x", "y"]}) is None
+    assert set(_call(client, "getNoteTags", note=nid)) == {"x", "y"}
+
+
+def test_bulk_tags(client):
+    nid = _call(client, "addNote", note=_basic(front="t1"))
+    assert _call(client, "addTags", notes=[nid], tags="marked blue") is None
+    assert "marked" in _call(client, "getNoteTags", note=nid)
+    assert _call(client, "removeTags", notes=[nid], tags="blue") is None
+    assert "blue" not in _call(client, "getNoteTags", note=nid)
+    assert "marked" in _call(client, "getTags")
+
+
+def test_clear_unused_tags(client):
+    assert _call(client, "clearUnusedTags") is None

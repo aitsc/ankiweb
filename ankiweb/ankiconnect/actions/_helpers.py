@@ -43,3 +43,19 @@ def check_addable(col, note, options):
     if fc == _DUPLICATE and not options.get("allowDuplicate", False):
         return False, "cannot create note because it is a duplicate"
     return True, None
+
+
+def note_to_info(col, note):
+    model = note.note_type()
+    fields = {}
+    for name, (ord_, _f) in col.models.field_map(model).items():
+        fields[name] = {"value": note.fields[ord_], "order": ord_}
+    return {
+        "noteId": note.id,
+        "profile": "User 1",
+        "tags": list(note.tags),
+        "fields": fields,
+        "modelName": model["name"],
+        "mod": note.mod,
+        "cards": list(note.card_ids()),
+    }
