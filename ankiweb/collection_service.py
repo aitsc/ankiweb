@@ -34,11 +34,12 @@ class CollectionService:
         col, self._col = self._col, None
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, lambda: col.close())
-        self._executor.shutdown(wait=True)
+        await loop.run_in_executor(None, self._executor.shutdown)
 
     async def run(self, fn: Callable[[Collection], T]) -> T:
-        if self._col is None:
-            raise RuntimeError("collection not open")
         async with self._lock:
+            col = self._col
+            if col is None:
+                raise RuntimeError("collection not open")
             loop = asyncio.get_running_loop()
-            return await loop.run_in_executor(self._executor, lambda: fn(self._col))
+            return await loop.run_in_executor(self._executor, lambda: fn(col))
