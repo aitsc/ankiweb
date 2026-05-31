@@ -3,6 +3,36 @@ import html
 from ankiweb.screens.congrats import render_congrats_html
 
 
+def make_overview_handler(service, hub):
+    async def handler(arg: str):
+        if arg == "study":
+            await service.run(lambda col: col.startTimebox())
+            await hub.push_call("overview", "ankiwebNavigate", ["/reviewer"])
+        elif arg == "decks":
+            await hub.push_call("overview", "ankiwebNavigate", ["/deckbrowser"])
+        elif arg == "unbury":
+            def unbury(col):
+                from anki.scheduler.base import UnburyDeck
+                return col.sched.unbury_deck(col.decks.get_current_id(), UnburyDeck.Mode.ALL)
+            await service.run_op(unbury, initiator="overview")
+            await hub.push_call("overview", "ankiwebReload", [])
+        elif arg in ("refresh", "empty"):
+            did = await service.run(lambda col: col.decks.get_current_id())
+            is_dyn = await service.run(lambda col: bool(col.decks.get(did).get("dyn")))
+            if is_dyn:  # rebuild/empty raise FilteredDeckError on a normal deck
+                if arg == "refresh":
+                    await service.run_op(lambda col: col.sched.rebuild_filtered_deck(did),
+                                         initiator="overview")
+                else:
+                    await service.run_op(lambda col: col.sched.empty_filtered_deck(did),
+                                         initiator="overview")
+                await hub.push_call("overview", "ankiwebReload", [])
+        # 'opts' (deck options), 'studymore' (custom study), 'description' deferred to later plans.
+        return None
+
+    return handler
+
+
 def _number_cell(n: int, cls: str) -> str:
     return f"<td align='center'><span class='{cls}'>{n}</span></td>"
 

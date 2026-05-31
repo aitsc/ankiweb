@@ -48,3 +48,32 @@ def test_open_command_sets_current_and_navigates(client):
     # current deck is now Default
     cur = client.portal.call(client.app.state.service.run, lambda col: col.decks.get_current_id())
     assert cur == did
+
+
+def test_overview_route(client):
+    did = client.portal.call(client.app.state.service.run, lambda col: col.decks.id("Default"))
+    client.portal.call(client.app.state.service.run, lambda col: col.decks.set_current(did))
+    r = client.get("/overview")
+    assert r.status_code == 200
+    assert 'window.__ankiwebContext="overview"' in r.text
+    assert "/_anki/css/overview.css" in r.text
+
+
+def test_overview_study_navigates_to_reviewer(client):
+    with client.websocket_connect("/ws?context=overview") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "overview", "arg": "study"})
+        msg = ws.receive_json()
+        while msg["type"] != "call":
+            msg = ws.receive_json()
+        assert msg["fn"] == "ankiwebNavigate"
+        assert msg["args"] == ["/reviewer"]
+
+
+def test_overview_decks_navigates_home(client):
+    with client.websocket_connect("/ws?context=overview") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "overview", "arg": "decks"})
+        msg = ws.receive_json()
+        while msg["type"] != "call":
+            msg = ws.receive_json()
+        assert msg["fn"] == "ankiwebNavigate"
+        assert msg["args"] == ["/deckbrowser"]
