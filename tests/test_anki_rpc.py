@@ -39,3 +39,10 @@ def test_unknown_method_404(client):
     r = client.post("/_anki/doesNotExist", content=b"",
                     headers={"Content-Type": "application/binary"})
     assert r.status_code == 404
+
+
+def test_save_custom_colours(client):
+    # empty body is a valid no-op write; returns 204
+    r = client.post("/_anki/saveCustomColours", content=b"",
+                    headers={"Content-Type": "application/binary"})
+    assert r.status_code == 204
