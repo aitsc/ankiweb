@@ -43,3 +43,14 @@ def test_non_type_card_leaves_type_correct_none(col):
     s.type_correct = "stale"
     info = load_question(col, s)
     assert s.type_correct in (None, "Paris")   # reset per card; never the stale value
+
+
+def test_answer_filter_renders_diff(col):
+    from ankiweb.screens.reviewer import ReviewerSession, load_question, render_answer
+    s = ReviewerSession()
+    load_question(col, s)               # sets s.type_correct = "Paris"
+    s.typed_answer = "Paros"
+    info = render_answer(col, s)
+    assert "typeans" in info["a"]
+    assert "typeBad" in info["a"] or "typeMissed" in info["a"]
+    assert "[[type:" not in info["a"]

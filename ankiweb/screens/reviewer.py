@@ -63,9 +63,13 @@ def load_question(col, session: ReviewerSession) -> dict | None:
 
 
 def render_answer(col, session: ReviewerSession) -> dict:
-    """Render the answer side + the 4 ease interval labels [Again, Hard, Good, Easy]."""
+    """Render the answer side + the 4 ease interval labels [Again, Hard, Good, Easy].
+    Always runs the type-answer filter: replaces [[type:...]] with the compare_answer diff
+    when type_correct is set, or strips any stray marker when None (no-op for Basic cards)."""
+    from ankiweb.screens.type_answer import type_answer_answer_filter
+    a = type_answer_answer_filter(col, session, session.card.answer())
     return {
-        "a": render_av_buttons(session.card.answer()),
+        "a": render_av_buttons(a),
         "labels": list(col.sched.describe_next_states(session.states)),
     }
 
@@ -87,7 +91,8 @@ _EASE_NAMES = ("Again", "Hard", "Good", "Easy")
 
 
 def show_answer_bar() -> str:
-    return "<button id='ansbut' class='ansbut' onclick=\"pycmd('ans')\">Show Answer</button>"
+    return ("<button id='ansbut' class='ansbut' "
+            "onclick=\"ankiwebShowAnswer()\">Show Answer</button>")
 
 
 def ease_buttons_bar(labels) -> str:
@@ -126,6 +131,14 @@ def reviewer_page_body() -> str:
         "}"
         "next();"
         "}"
+        "function ankiwebShowAnswer(){"
+        "  var ta=document.getElementById('typeans');"
+        "  if(ta&&ta.tagName==='INPUT'){window.pycmd('typed:'+ta.value);}"
+        "  window.pycmd('ans');"
+        "}"
+        "window.ankiwebShowAnswer=ankiwebShowAnswer;"
+        "function ankiwebTypeAnsPress(e){if(e&&(e.key==='Enter'||e.keyCode===13)){ankiwebShowAnswer();}}"
+        "window.ankiwebTypeAnsPress=ankiwebTypeAnsPress;"
         "b.registerCalls({"
         "_showQuestion:function(){return window._showQuestion.apply(window,arguments);},"
         "_showAnswer:function(){return window._showAnswer.apply(window,arguments);},"
@@ -206,6 +219,8 @@ def make_reviewer_handler(service, hub):
                 files = await service.run(one)
                 if files:
                     await hub.push_call("reviewer", "ankiwebPlayAudio", [files])
+        elif arg.startswith("typed:"):
+            session.typed_answer = arg[len("typed:"):]
         elif arg == "decks":
             await hub.push_call("reviewer", "ankiwebNavigate", ["/deckbrowser"])
         # ignore everything else (e.g. reviewer.js emits "updateToolbar" after each render)

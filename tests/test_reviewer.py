@@ -56,7 +56,7 @@ def test_show_answer_bar():
     from ankiweb.screens.reviewer import show_answer_bar
     html = show_answer_bar()
     assert "Show Answer" in html
-    assert "pycmd('ans')" in html
+    assert "ankiwebShowAnswer()" in html
 
 
 def test_ease_buttons_bar():
