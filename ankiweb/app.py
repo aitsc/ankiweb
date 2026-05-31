@@ -18,23 +18,28 @@ _ALLOWED_HOST_PREFIXES = ("127.0.0.1:", "localhost:", "[::1]:")
 _ALLOWED_HOSTS = ("127.0.0.1", "localhost", "testserver")
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, service: CollectionService | None = None,
+               hub: BridgeHub | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+    owns = service is None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        service = CollectionService(settings)
-        await service.open()
-        hub = BridgeHub()
-        service.subscribe(lambda flags, initiator: hub.broadcast_opchanges(flags, initiator))
+        svc = service
+        if owns:
+            svc = CollectionService(settings)
+            await svc.open()
+        h = hub if hub is not None else BridgeHub()
+        svc.subscribe(lambda flags, initiator: h.broadcast_opchanges(flags, initiator))
         app.state.settings = settings
-        app.state.service = service
-        app.state.hub = hub
-        register_screen_handlers(service, hub)
+        app.state.service = svc
+        app.state.hub = h
+        register_screen_handlers(svc, h)
         try:
             yield
         finally:
-            await service.close()
+            if owns:
+                await svc.close()
 
     app = FastAPI(title="ankiweb", lifespan=lifespan)
 
