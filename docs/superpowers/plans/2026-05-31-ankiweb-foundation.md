@@ -160,10 +160,9 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     return app
-
-
-app = create_app()
 ```
+
+> Do NOT add a module-level `app = create_app()`. The uvicorn entrypoint (Task 14) calls `create_app(settings)` itself; a top-level instance would open the collection + validate assets on mere import and break test collection.
 
 - [ ] **Step 6: Commit**
 
@@ -525,6 +524,13 @@ def test_serves_bare_css_remap(client):
     assert r.headers["content-type"].startswith("text/css")
 
 
+def test_serves_vendor_min_remap(client):
+    # /_anki/jquery.min.js -> js/vendor/jquery.min.js (bare .min.js vendor remap)
+    r = client.get("/_anki/jquery.min.js")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/javascript")
+
+
 def test_sveltekit_spa_fallback(client):
     # unknown sveltekit path (non-immutable) falls back to index.html
     r = client.get("/_anki/sveltekit/graphs")
@@ -582,8 +588,8 @@ def _resolve(rel: str) -> str:
         if rel.endswith(".css"):
             return f"css/{rel}"
         if rel.endswith(".js"):
-            base = rel[:-3]
-            if base in ("jquery", "jquery-ui", "plot"):
+            stem = rel[:-3].removesuffix(".min")  # jquery.min -> jquery
+            if stem in ("jquery", "jquery-ui", "plot"):
                 return f"js/vendor/{rel}"
             return f"js/{rel}"
     return rel
@@ -668,11 +674,12 @@ def client(tmp_path: Path):
 
 
 def test_serves_media_file(client):
-    # write a media file via the backend, then fetch it
-    app = client.app
-    import asyncio
-    fname = asyncio.get_event_loop().run_until_complete(
-        app.state.service.run(lambda col: col.media.write_data("hi.txt", b"hello"))
+    # Write a media file via the backend, then fetch it. Drive the coroutine on the
+    # app's own loop via TestClient's blocking portal (NOT asyncio.get_event_loop(),
+    # which would create a foreign loop on py3.12 and clash with the service's loop).
+    fname = client.portal.call(
+        client.app.state.service.run,
+        lambda col: col.media.write_data("hi.txt", b"hello"),
     )
     r = client.get(f"/{fname}")
     assert r.status_code == 200
@@ -680,8 +687,10 @@ def test_serves_media_file(client):
 
 
 def test_media_traversal_blocked(client):
-    r = client.get("/../../etc/passwd")
-    assert r.status_code in (403, 404)
+    # httpx/TestClient normalizes "/../.." in the URL before sending, so use a
+    # percent-encoded traversal that survives normalization and reaches the guard.
+    r = client.get("/%2e%2e/%2e%2e/etc/passwd")
+    assert r.status_code == 403
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -693,11 +702,12 @@ Expected: FAIL (404 — no media route).
 
 Add to `ankiweb/assets.py` a second router builder:
 ```python
-def build_media_router(service) -> APIRouter:
+def build_media_router(get_service) -> APIRouter:
     router = APIRouter()
 
     @router.get("/{path:path}")
     async def serve_media(path: str) -> Response:
+        service = get_service()  # lazy: service is created in lifespan, not import time
         media_dir = Path(await service.run(lambda col: col.media.dir())).resolve()
         target = (media_dir / path).resolve()
         try:
@@ -711,20 +721,13 @@ def build_media_router(service) -> APIRouter:
     return router
 ```
 
-- [ ] **Step 4: Mount media router LAST in app**
+- [ ] **Step 4: Mount media router DEAD LAST in app**
 
-In `ankiweb/app.py`, the media catch-all must be included **after** all other routers (it matches `/{path:path}`). At the end of `create_app`, before `return app`:
-```python
-    from ankiweb.assets import build_media_router
-    app.include_router(build_media_router(... ))  # service is created in lifespan; see note
-```
-
-Because the catch-all needs the service (created in lifespan), pass a lazy accessor. Replace the media route to read the service from app state via a closure over `app`:
+The media catch-all matches `GET /{path:path}` — **Starlette matches routes in registration order**, so it MUST be the very last route registered, after every other route/mount added in this and later tasks (`/healthz`, `/shell/static`, `/spike/*`, `/_anki`, `/ws`). Otherwise it shadows them. The authoritative final order is the consolidated `create_app` in **Task 13** — follow that. For now, add the media include as the final statement before `return app`, with a lazy service accessor:
 ```python
     from ankiweb.assets import build_media_router
     app.include_router(build_media_router(lambda: app.state.service))
 ```
-And change `build_media_router(service)` signature to `build_media_router(get_service)` using `service = get_service()` inside `serve_media`.
 
 - [ ] **Step 5: Run to verify pass**
 
@@ -768,6 +771,8 @@ def client(tmp_path: Path):
 
 def test_name_mapping_roundtrip():
     assert camel_to_snake("getDeckConfigsForUpdate") == "get_deck_configs_for_update"
+    assert camel_to_snake("i18nResources") == "i18n_resources"  # digit-run regression guard
+    assert camel_to_snake("cardStats") == "card_stats"
     assert snake_to_camel("i18n_resources") == "i18nResources"
     assert snake_to_camel("get_note") == "getNote"
 
@@ -815,11 +820,13 @@ PASSTHROUGH: set[str] = {
     "get_deck_configs_for_update",
 }
 
-_CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z0-9])")
+_S1 = re.compile(r"(.)([A-Z][a-z]+)")
+_S2 = re.compile(r"([a-z0-9])([A-Z])")
 
 
 def camel_to_snake(name: str) -> str:
-    return _CAMEL_BOUNDARY.sub("_", name).lower()
+    # keep digit runs attached to the preceding token: i18nResources -> i18n_resources
+    return _S2.sub(r"\1_\2", _S1.sub(r"\1_\2", name)).lower()
 
 
 def snake_to_camel(name: str) -> str:
@@ -1079,7 +1086,7 @@ class BridgeHub:
     # --- request/response (evalWithCallback / cmd callback) ---
     def _alloc(self) -> tuple[int, asyncio.Future]:
         self._next_id += 1
-        fut: asyncio.Future = asyncio.get_event_loop().create_future()
+        fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self._pending[self._next_id] = fut
         return self._next_id, fut
 
@@ -1118,6 +1125,12 @@ def build_router(get_hub) -> APIRouter:
 
     @router.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket, context: str = "default"):
+        # BaseHTTPMiddleware host_guard does NOT cover WS upgrades — check here too.
+        host = websocket.headers.get("host", "")
+        if not (host.startswith(("127.0.0.1:", "localhost:", "[::1]:"))
+                or host in ("127.0.0.1", "localhost", "testserver")):
+            await websocket.close(code=1008)
+            return
         hub = get_hub()
         await websocket.accept()
         hub.register(context, websocket)
@@ -1334,10 +1347,12 @@ def test_shell_bundle_built():
 
 - [ ] **Step 6: Serve `/shell/static` + run test**
 
-In `ankiweb/app.py` `create_app`:
+In `ankiweb/app.py` `create_app`, register this **before** the media catch-all (see the consolidated `create_app` in Task 13). Use `check_dir=False` + `mkdir` so the app constructs even when the shell hasn't been built yet (fresh clone / asset-serving tests):
 ```python
     from fastapi.staticfiles import StaticFiles
-    app.mount("/shell/static", StaticFiles(directory=str(settings.shell_dir / "static")), name="shell")
+    static_dir = settings.shell_dir / "static"
+    static_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/shell/static", StaticFiles(directory=str(static_dir), check_dir=False), name="shell")
 ```
 Run: `pytest tests/test_shell_build.py -v`
 Expected: PASS.
@@ -1389,16 +1404,10 @@ def test_cmd_with_callback_roundtrip(client):
 
 
 def test_opchanges_broadcast_reaches_socket(client):
-    import anyio
     with client.websocket_connect("/ws?context=deckbrowser") as ws:
-        # trigger a broadcast from the service bus
-        async def fire():
-            await client.app.state.service.emit({"study_queues": True}, "init1")
-        anyio.from_thread.run(fire) if False else None
-        # Simpler: call hub directly through the app
-        import asyncio
-        asyncio.get_event_loop().run_until_complete(
-            client.app.state.hub.broadcast_opchanges({"study_queues": True}, "init1"))
+        # Drive the broadcast on the app's own loop via the TestClient portal.
+        client.portal.call(
+            client.app.state.hub.broadcast_opchanges, {"study_queues": True}, "init1")
         msg = ws.receive_json()
         assert msg["type"] == "opchanges"
         assert msg["flags"] == {"study_queues": True}
@@ -1408,7 +1417,7 @@ def test_opchanges_broadcast_reaches_socket(client):
 - [ ] **Step 2: Run to verify it fails then passes**
 
 Run: `pytest tests/test_ws_roundtrip.py -v`
-Expected: PASS. (If the event-loop access pattern in the second test is awkward under `TestClient`, replace it by calling `broadcast_opchanges` via an injected test-only HTTP route, or mark that assertion to drive the broadcast through `service.emit` inside a small `@app.post("/_test/emit")` route guarded by a flag. Keep the first test as the primary proof.)
+Expected: PASS. Both tests use `client.portal` (the `anyio.BlockingPortal` TestClient creates on `__enter__`) so coroutines run on the same loop the app/hub/service live on — never `asyncio.get_event_loop()` from the test thread.
 
 - [ ] **Step 3: Commit**
 
@@ -1460,7 +1469,7 @@ This is the de-risk capstone (Spec §10.3): prove the reused bundle's globals (`
 
 - [ ] **Step 2: Add spike routes**
 
-In `ankiweb/app.py` `create_app`:
+In `ankiweb/app.py` `create_app`, register these **before** the media catch-all (see Task 13's consolidated `create_app`):
 ```python
     from fastapi.responses import FileResponse
 
@@ -1489,6 +1498,7 @@ import time
 import pytest
 import uvicorn
 from pathlib import Path
+from anki.collection import Collection
 from ankiweb.config import Settings
 from ankiweb.app import create_app
 
@@ -1498,28 +1508,32 @@ from playwright.sync_api import sync_playwright
 
 @pytest.fixture
 def live_server(tmp_path: Path):
-    settings = Settings(collection_path=tmp_path / "collection.anki2", port=8123)
-    app = create_app(settings)
-
-    # seed one card before the server starts handling requests
-    import asyncio
-    async def seed():
-        await app.router.startup()
-        await app.state.service.run(_add_card)
-    def _add_card(col):
+    col_path = tmp_path / "collection.anki2"
+    # Seed ONE card synchronously on disk BEFORE the server opens the file —
+    # no event loop, no cross-loop hazard, no double-open. Close to release the lock.
+    col = Collection(str(col_path))
+    try:
         n = col.new_note(col.models.by_name("Basic"))
-        n["Front"] = "Spike Q"; n["Back"] = "Spike A"
+        n["Front"] = "Spike Q"
+        n["Back"] = "Spike A"
         col.add_note(n, col.decks.id("Default"))
+    finally:
+        col.close()
 
+    settings = Settings(collection_path=col_path, port=8123)
+    app = create_app(settings)
     config = uvicorn.Config(app, host="127.0.0.1", port=8123, log_level="warning")
     server = uvicorn.Server(config)
     t = threading.Thread(target=server.run, daemon=True)
     t.start()
-    # wait for startup + seed
-    time.sleep(1.5)
-    import httpx
-    # seed via a temporary route is cleaner; here seed through the running app's service
-    asyncio.get_event_loop().run_until_complete(app.state.service.run(_add_card))
+
+    # Wait for REAL readiness (uvicorn sets server.started), not a fixed sleep.
+    deadline = time.monotonic() + 10
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("uvicorn did not start in time")
+        time.sleep(0.05)
+
     yield "http://127.0.0.1:8123"
     server.should_exit = True
     t.join(timeout=5)
@@ -1529,7 +1543,9 @@ def test_reviewer_js_renders_question(live_server):
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page()
-        page.goto(f"{live_server}/spike/reviewer")
+        # context=reviewer so the page's WS registers under the same context the
+        # server pushes _showQuestion to (bootstrap.ts reads ?context= from the URL).
+        page.goto(f"{live_server}/spike/reviewer?context=reviewer")
         page.wait_for_timeout(800)  # WS connect + bundle load + ready()
         import httpx
         httpx.post(f"{live_server}/spike/push_question")
@@ -1559,7 +1575,111 @@ git commit -m "test: spike — real reviewer.js renders a card via the WS bridge
 
 ---
 
-## Task 13: Runnable app + developer entrypoint
+## Task 13: Consolidate `create_app` with the correct route order
+
+Earlier tasks each appended to `create_app` incrementally. This task locks in the **authoritative** version with the route-registration order that prevents the media catch-all from shadowing other routes. Replace `ankiweb/app.py`'s `create_app` (and its imports) with exactly this.
+
+**Files:**
+- Modify: `ankiweb/app.py`
+- Test: the whole suite must still pass
+
+- [ ] **Step 1: Replace `ankiweb/app.py` with the consolidated version**
+
+```python
+from __future__ import annotations
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import PlainTextResponse
+
+from ankiweb.config import Settings
+from ankiweb.collection_service import CollectionService
+from ankiweb.bridge.hub import BridgeHub
+from ankiweb.assets import build_router as build_assets_router, build_media_router
+from ankiweb.anki_rpc import build_router as build_rpc_router
+from ankiweb.bridge.ws import build_router as build_ws_router
+
+_ALLOWED_HOST_PREFIXES = ("127.0.0.1:", "localhost:", "[::1]:")
+_ALLOWED_HOSTS = ("127.0.0.1", "localhost", "testserver")
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or Settings.from_env()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        service = CollectionService(settings)
+        await service.open()
+        hub = BridgeHub()
+        service.subscribe(lambda flags, initiator: hub.broadcast_opchanges(flags, initiator))
+        app.state.settings = settings
+        app.state.service = service
+        app.state.hub = hub
+        try:
+            yield
+        finally:
+            await service.close()
+
+    app = FastAPI(title="ankiweb", lifespan=lifespan)
+
+    async def host_guard(request, call_next):
+        host = request.headers.get("host", "")
+        if not (host.startswith(_ALLOWED_HOST_PREFIXES) or host in _ALLOWED_HOSTS):
+            return PlainTextResponse("forbidden host", status_code=403)
+        return await call_next(request)
+
+    app.add_middleware(BaseHTTPMiddleware, dispatch=host_guard)
+
+    # --- specific routes FIRST, media catch-all LAST (Starlette matches in order) ---
+    @app.get("/healthz")
+    def healthz():
+        return {"ok": True}
+
+    static_dir = settings.shell_dir / "static"
+    static_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/shell/static", StaticFiles(directory=str(static_dir), check_dir=False), name="shell")
+
+    @app.get("/spike/reviewer")
+    def spike_page():
+        return FileResponse(settings.shell_dir / "reviewer_spike.html")
+
+    @app.post("/spike/push_question")
+    async def spike_push():
+        async def render(col):
+            cid = col.find_cards("")[0]
+            card = col.get_card(cid)
+            return card.question(), card.answer()
+        q, a = await app.state.service.run(render)
+        await app.state.hub.push_call("reviewer", "_showQuestion", [q, a, "card card1"])
+        return {"pushed": True}
+
+    app.include_router(build_assets_router(settings.assets_dir))       # GET  /_anki/{path}
+    app.include_router(build_rpc_router(lambda: app.state.service))    # POST /_anki/{method}
+    app.include_router(build_ws_router(lambda: app.state.hub))         # WS   /ws
+    app.include_router(build_media_router(lambda: app.state.service))  # GET  /{path} — LAST
+
+    return app
+```
+
+> Why GET `/_anki/{path}` (assets) and POST `/_anki/{method}` (rpc) coexist: Starlette discriminates by method, so a POST to `/_anki/i18nResources` skips the GET assets route (405-candidate) and matches the rpc route. The media catch-all is GET-only and registered last, so it never shadows the rpc POST nor any earlier GET route/mount.
+
+- [ ] **Step 2: Run the full suite**
+
+Run: `pytest -v -k "not spike"`
+Expected: all non-browser tests PASS with the consolidated app.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add ankiweb/app.py
+git commit -m "refactor: consolidate create_app with explicit route order (media last)"
+```
+
+---
+
+## Task 14: Runnable app + developer entrypoint
 
 **Files:**
 - Create: `ankiweb/__main__.py`, `README.md`
@@ -1645,10 +1765,11 @@ git commit -m "feat: runnable app entrypoint + setup docs"
 | §5.1 WS protocol (cmd/result/call/eval/opchanges) | 9, 10, 11 |
 | §5.2 pycmd shim + domDone queue | 10 |
 | §5 OpChanges broadcast | 9, 11 |
-| §6.5 minimal shell bootstrap | 10, 13 |
+| §6.5 minimal shell **bootstrap only** (toolbar/router/menu primitives → Plan 2) | 10, 14 |
+| app assembly / route order (media catch-all last) | 13 |
 | §10 Phase 0 spike (reviewer.js via bridge) | 1 (anki import), 2 (assets), 12 (bridge render) |
 
-Deferred to Plan 2 (Study Loop C), intentionally not in this plan: `getSchedulingStatesWithContext`/`setSchedulingStates` custom handlers + the per-session state-mutation key (§4.3, §5.3 — they require the reviewer state machine), the deck-browser/overview/reviewer/congrats screens (§6.1–§6.4), the top toolbar/router/menu primitives beyond bootstrap (§6.5). Noted so coverage gaps are deliberate, not accidental.
+Deferred to Plan 2 (Study Loop C), intentionally not in this plan: `getSchedulingStatesWithContext`/`setSchedulingStates` custom handlers + the per-session state-mutation key (§4.3, §5.3 — they require the reviewer state machine), the deck-browser/overview/reviewer/congrats screens (§6.1–§6.4), the top toolbar/router/menu primitives beyond bootstrap (§6.5). Also deferred: converting protobuf `OpChanges` → the flags dict and wiring real mutating ops (e.g. `answer_card`) to `service.emit()` — in Plan 1 the OpChanges bus is exercised only with dict fixtures; the real producer is the reviewer answer flow in Plan 2 (broadcast currently assumes a JSON-serializable dict, not a raw proto). Noted so coverage gaps are deliberate, not accidental.
 
 **2. Placeholder scan:** No "TBD/TODO/implement later". Two steps contain *conditional guidance* ("if `_showQuestion` is namespaced differently…", "if the event-loop pattern is awkward…") — these are spike/test contingencies with concrete fallbacks, not unfinished requirements; acceptable.
 
