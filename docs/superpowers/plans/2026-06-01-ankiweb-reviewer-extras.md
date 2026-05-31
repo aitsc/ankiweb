@@ -17,7 +17,7 @@
 ## Architecture map (existing code this plan touches)
 
 - `ankiweb/screens/reviewer.py` — `ReviewerSession` (card/states/context); `load_question(col, session)→{q,a,bodyclass}|None` (calls `card.question()`/`answer()`, `card.start_timer()`); `render_answer(col, session)→{a,labels}`; `make_reviewer_handler` with `_show_next()` + handler vocab `show`/`ans`/`ease1..4`/`starttimer`/`decks`; `reviewer_page_body()` = the DOM shell + inline `<script>` that `registerCalls({_showQuestion, _showAnswer, ankiwebSetAnswerBar})` and `pycmd('show')` on load. **The inline script is the JS extension point for audio/shortcuts.** B4 already has the handler write `hub.ui_state.current_card_id`/`side`.
-- `ankiweb/assets.py` — `_MIME` map + `build_media_router` serving `GET /{path}` from `col.media.dir()` (path-traversal guarded). **Audio MIME types must be added.**
+- `ankiweb/assets.py` — `MIME` dict (keys are dot-prefixed lowercase exts, e.g. `".css"`; lookup via `_mime(path)` with `.lower()`) + `build_media_router` serving `GET /{path}` from `col.media.dir()` (path-traversal guarded). **Audio MIME types must be added.**
 - `ankiweb/bridge/hub.py` — `push_call(ctx,fn,args)`, `eval_with_callback(ctx,js)→value` (alloc id, send `{type:eval,id}`, await future resolved by `resolve()` on a client `{type:result,id}`), `dispatch_cmd(ctx,arg)`.
 - `ankiweb/ankiconnect/actions/gui.py` — `gui_play_audio` currently returns `review_active` and no-ops. **Wire it to push audio.**
 - Tests: `tests/test_reviewer.py` (pure unit), `tests/test_screen_routes.py` (TestClient + `portal.call` + `websocket_connect("/ws?context=reviewer")` sending `{type:cmd}` and draining `{type:call}` frames), `tests/test_reviewer_integration.py` (Playwright via `pytest.importorskip`, a live uvicorn `live_server` fixture, `page.goto("/reviewer")`).
@@ -63,14 +63,13 @@ def test_media_audio_mime(tmp_path):
 
 - [ ] **Step 2: Run to verify failure** — `conda run -n ankiweb python -m pytest tests/test_media_serving.py::test_media_audio_mime -v` → FAIL (octet-stream / wrong mime).
 
-- [ ] **Step 3: Implement** — In `ankiweb/assets.py`, extend the `_MIME` dict (READ the file first to match its exact name/format) with:
+- [ ] **Step 3: Implement** — In `ankiweb/assets.py`, extend the `MIME` dict (the real name — READ the file first; keys are dot-prefixed lowercase) with:
 ```python
     ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".oga": "audio/ogg",
     ".opus": "audio/opus", ".wav": "audio/wav", ".flac": "audio/flac",
     ".m4a": "audio/mp4", ".aac": "audio/aac",
     ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
 ```
-(If `_MIME` keys are without the leading dot, or the lookup uses `os.path.splitext`, match the existing style exactly.)
 
 - [ ] **Step 4: Run to verify pass** — `conda run -n ankiweb python -m pytest tests/test_media_serving.py -v` → PASS.
 
@@ -157,16 +156,16 @@ def test_answer_autoplays_and_play_and_replay(client):
         ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "ans"})
         calls = _calls(ws, 3)   # _showAnswer + ease bar + ankiwebPlayAudio
         assert "ankiwebPlayAudio" in calls
-        # answer side autoplay includes answer audio (and question audio via replayq)
-        assert "bye.mp3" in calls["ankiwebPlayAudio"][0][0]
+        # answer-side AUTOPLAY is answer-only (NOT the question audio) — matches Qt _showAnswer
+        assert calls["ankiwebPlayAudio"][0][0] == ["bye.mp3"]
         # per-clip replay of the answer's first sound
         ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "play:a:0"})
         c2 = _calls(ws, 1)
-        assert c2.get("ankiwebPlayAudio") and isinstance(c2["ankiwebPlayAudio"][0][0], list)
-        # R-key replay re-pushes the current side's audio
+        assert c2["ankiwebPlayAudio"][0][0] == ["bye.mp3"]
+        # R-key replay on the answer side prepends the question audio (replayq default True)
         ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "replay"})
         c3 = _calls(ws, 1)
-        assert "ankiwebPlayAudio" in c3
+        assert c3["ankiwebPlayAudio"][0][0] == ["hello.mp3", "bye.mp3"]
 ```
 Append a unit test to `tests/test_reviewer.py`:
 ```python
@@ -229,10 +228,10 @@ In `make_reviewer_handler._show_next`, after the existing `_showQuestion` + `ank
         if q_files:
             await hub.push_call("reviewer", "ankiwebPlayAudio", [q_files])
 ```
-In the handler's `arg == "ans"` branch, after the existing pushes + `hub.ui_state.side = "answer"`, add:
+In the handler's `arg == "ans"` branch, after the existing pushes + `hub.ui_state.side = "answer"`, add (autoplay plays ONLY the answer-side tags — Qt's `_showAnswer` does NOT prepend question audio; the `replayq` prepend belongs to the explicit replay path):
 ```python
             a_files = await service.run(
-                lambda col: answer_side_audio(session.card) if session.card.autoplay() else [])
+                lambda col: av_sound_filenames(session.card, False) if session.card.autoplay() else [])
             if a_files:
                 await hub.push_call("reviewer", "ankiwebPlayAudio", [a_files])
 ```
@@ -271,7 +270,7 @@ git -c user.name="tsc" -c user.email="xxj.tan@gmail.com" commit -m "feat(reviewe
 ```
 
 ## Context
-Rendered cards carry `[anki:play:<side>:<N>]` refs + the filenames in `card.{question,answer}_av_tags()`. `render_av_buttons` turns refs into inline replay buttons (`pycmd('play:q:0')`); the handler autoplays each side on show/answer (gated by `card.autoplay()`), `replay` re-pushes the current side (question-first on the answer side per `replay_question_audio_on_answer_side`), and `play:<side>:<N>` plays one clip. TTS tags are skipped. The plain-Basic-card tests push no audio frame, so existing reviewer tests are unaffected.
+Rendered cards carry `[anki:play:<side>:<N>]` refs + the filenames in `card.{question,answer}_av_tags()` (note: `answer_av_tags()` is ONLY the answer side's own `[sound:]` tags — it does NOT include the question's sound, even though `{{FrontSide}}` carries a `[anki:play:q:N]` ref into the answer HTML). `render_av_buttons` turns refs into inline replay buttons (`pycmd('play:q:0')`); the handler AUTOPLAYS the question tags on show and the answer tags on flip (each gated by `card.autoplay()`, answer-only on flip — matching Qt `_showAnswer`); the explicit `replay` (R key / `guiPlayAudio`) re-pushes the current side, prepending the question audio on the answer side per `replay_question_audio_on_answer_side()` (`answer_side_audio`); `play:<side>:<N>` plays one clip (the index is into the full per-side `av_tags` list incl. TTS, guarded by `isinstance(..., SoundOrVideoTag)`). TTS tags are skipped. The plain-Basic-card tests push no audio frame, so existing reviewer tests are unaffected.
 
 ## Report Format
 Status, pytest summaries, files changed, self-review, commit SHA, concerns.
@@ -290,20 +289,52 @@ def test_reviewer_body_registers_audio_player():
     assert "ankiwebPlayAudio" in body
     assert "Audio(" in body or "new Audio" in body
 ```
-Append a Playwright test to `tests/test_reviewer_integration.py` (mirror its existing `live_server` fixture + `pytest.importorskip("playwright")`; seed a card WITH `[sound:hello.mp3]` + the media file in that fixture or a dedicated one). The test stubs audio playback (headless Chromium emits no sound) and asserts `play()` is called with the right src:
+Append to `tests/test_reviewer_integration.py` a dedicated audio `live_server` fixture (mirror the EXISTING `live_server` exactly — it runs uvicorn in a thread; use a DIFFERENT port, 8126) and an inline `sync_playwright` test (NO `page` fixture — the existing file has none; `pytest.importorskip("playwright.sync_api")` is already at the top). The test stubs `HTMLMediaElement.play` (headless Chromium emits no sound) and asserts the src:
 ```python
-def test_audio_autoplays_on_question(live_server, page):
-    # stub HTMLMediaElement.play to record the src before navigating
-    page.add_init_script(
-        "window.__played=[];"
-        "HTMLMediaElement.prototype.play=function(){window.__played.push(this.src);"
-        "return Promise.resolve();};")
-    page.goto(live_server + "/reviewer")
-    page.wait_for_function("document.querySelector('#qa') && document.querySelector('#qa').innerHTML.length>0")
-    page.wait_for_function("window.__played && window.__played.length>0")
-    assert any(s.endswith("/hello.mp3") for s in page.evaluate("window.__played"))
+@pytest.fixture
+def live_server_audio(tmp_path: Path):
+    import os
+    col_path = tmp_path / "audio.anki2"
+    col = Collection(str(col_path))
+    try:
+        m = col.models.new("AudioM")
+        col.models.add_field(m, col.models.new_field("Front"))
+        t = col.models.new_template("C"); t["qfmt"] = "{{Front}} [sound:hello.mp3]"; t["afmt"] = "{{Front}}"
+        col.models.add_template(m, t); col.models.add_dict(m)
+        did = col.decks.id("Default")
+        n = col.new_note(col.models.by_name("AudioM")); n["Front"] = "Q"
+        col.add_note(n, did); col.decks.set_current(did)
+        with open(os.path.join(col.media.dir(), "hello.mp3"), "wb") as f:
+            f.write(b"\x00")
+    finally:
+        col.close()
+    settings = Settings(collection_path=col_path, port=8126)
+    server = uvicorn.Server(uvicorn.Config(create_app(settings), host="127.0.0.1",
+                                           port=8126, log_level="warning"))
+    t = threading.Thread(target=server.run, daemon=True); t.start()
+    deadline = time.monotonic() + 10
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("server did not start")
+        time.sleep(0.05)
+    yield "http://127.0.0.1:8126"
+    server.should_exit = True; t.join(timeout=5)
+
+
+def test_audio_autoplays_on_question(live_server_audio):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.add_init_script(
+            "window.__played=[];"
+            "HTMLMediaElement.prototype.play=function(){window.__played.push(this.src);"
+            "return Promise.resolve();};")
+        page.goto(f"{live_server_audio}/reviewer")
+        page.wait_for_function("document.getElementById('qa').textContent.length>0", timeout=6000)
+        page.wait_for_function("window.__played.length>0", timeout=6000)
+        assert any(s.endswith("/hello.mp3") for s in page.evaluate("window.__played"))
+        browser.close()
 ```
-(If the existing `live_server`/`page` fixtures live in a conftest or the test module, reuse them and seed an audio card the same way the file seeds its current card.)
 
 - [ ] **Step 2: Run to verify failure** — `conda run -n ankiweb python -m pytest tests/test_reviewer.py::test_reviewer_body_registers_audio_player -v` → FAIL.
 
@@ -425,7 +456,7 @@ def col():
     c.models.add_field(m, c.models.new_field("Back"))
     t = c.models.new_template("Card1")
     t["qfmt"] = "{{Front}}\n\n{{type:Back}}"
-    t["afmt"] = "{{FrontSide}}<hr id=answer>{{Back}}\n\n{{type:Back}}"
+    t["afmt"] = "{{FrontSide}}<hr id=answer>{{Back}}"   # stock form: the marker comes via {{FrontSide}}
     c.models.add_template(m, t)
     c.models.add_dict(m)
     n = c.new_note(c.models.by_name("TypeM")); n["Front"] = "capital?"; n["Back"] = "Paris"
@@ -468,21 +499,24 @@ def test_non_type_card_leaves_type_correct_none(col):
 Create `ankiweb/screens/type_answer.py`:
 ```python
 from __future__ import annotations
+import html as _html
 import re
 
 _TYPE_RE = re.compile(r"\[\[type:(.+?)\]\]")
 
 
 def _parse_spec(spec: str):
-    """'Back' / 'cloze:Text' / 'nc:Back' -> (field, is_cloze, combining)."""
-    combining = True
-    if spec.startswith("nc:"):
-        combining = False
-        spec = spec[3:]
+    """'Back' / 'cloze:Text' / 'nc:Back' / 'cloze:nc:Text' -> (field, is_cloze, combining).
+    anki emits the prefixes as cloze: then nc:, so strip them in a loop (any order)."""
     is_cloze = False
-    if spec.startswith("cloze:"):
-        is_cloze = True
-        spec = spec[len("cloze:"):]
+    combining = True
+    changed = True
+    while changed:
+        changed = False
+        if spec.startswith("cloze:"):
+            is_cloze = True; spec = spec[len("cloze:"):]; changed = True
+        if spec.startswith("nc:"):
+            combining = False; spec = spec[len("nc:"):]; changed = True
     return spec.strip(), is_cloze, combining
 
 
@@ -507,19 +541,22 @@ def type_answer_question_filter(col, card, session, html: str) -> str:
     field, is_cloze, combining = _parse_spec(m.group(1))
     note = card.note()
     model = note.note_type()
+    if field not in note:   # unknown field → warn, no input (Qt shows a warning); type_correct stays None
+        return _TYPE_RE.sub(
+            "<center><b>Type-answer field not found: " + _html.escape(field) + "</b></center>", html)
     if is_cloze:
-        # extract the cloze answer text for this card's ordinal
-        src = note[field] if field in note else ""
-        expected = col.extract_cloze_for_typing(src, card.ord + 1)
+        expected = col.extract_cloze_for_typing(note[field], card.ord + 1)
     else:
-        expected = note[field] if field in note else ""
+        expected = note[field]
+    if not expected:        # empty field → drop the marker, no input (Qt removes it); type_correct None
+        return _TYPE_RE.sub("", html)
     session.type_correct = expected
     session.type_combining = combining
     session.type_font, session.type_size = _field_font(model, field)
     box = (f"<center><input type=text id=typeans onkeypress=\"ankiwebTypeAnsPress(event);\" "
            f"style=\"font-family:'{session.type_font}';font-size:{session.type_size}px;\">"
            f"</center>")
-    return _TYPE_RE.sub(box, html, count=1)
+    return _TYPE_RE.sub(box, html)   # replace-all (a qfmt could carry the marker more than once)
 ```
 
 In `ankiweb/screens/reviewer.py`, add the new `ReviewerSession` fields and call the filter in `load_question`. Update the dataclass:
@@ -602,7 +639,7 @@ def _seed(col):
     col.models.add_field(m, col.models.new_field("Back"))
     t = col.models.new_template("Card1")
     t["qfmt"] = "{{Front}}\n\n{{type:Back}}"
-    t["afmt"] = "{{FrontSide}}<hr id=answer>{{Back}}\n\n{{type:Back}}"
+    t["afmt"] = "{{FrontSide}}<hr id=answer>{{Back}}"   # stock form: the marker comes via {{FrontSide}}
     col.models.add_template(m, t)
     col.models.add_dict(m)
     n = col.new_note(col.models.by_name("TypeM")); n["Front"] = "capital?"; n["Back"] = "Paris"
@@ -642,16 +679,19 @@ def type_answer_answer_filter(col, session, html: str) -> str:
                                 session.type_combining)
     block = (f"<div style=\"font-family:'{session.type_font}';"
              f"font-size:{session.type_size}px\">{output}</div>")
-    return _TYPE_RE.sub(block, html, count=1)
+    # replace-all: {{FrontSide}} in an afmt re-includes the question's [[type:]] marker, so the
+    # rendered answer can contain the marker more than once — Anki's re.sub replaces all of them.
+    return _TYPE_RE.sub(block, html)
 ```
 
 In `ankiweb/screens/reviewer.py`, `render_answer` keeps its signature and reads `session.typed_answer` (set by the `typed:` command before `ans`):
 ```python
 def render_answer(col, session):
     from ankiweb.screens.type_answer import type_answer_answer_filter
-    a = session.card.answer()
-    if session.type_correct is not None:
-        a = type_answer_answer_filter(col, session, a)
+    # Always run the filter: it compares when type_correct is set, and strips any stray
+    # [[type:]] marker (e.g. empty/unknown field) when it is None. Non-type answers have no
+    # marker, so it's a no-op for them.
+    a = type_answer_answer_filter(col, session, session.card.answer())
     return {"a": render_av_buttons(a),
             "labels": list(col.sched.describe_next_states(session.states))}
 ```
@@ -677,7 +717,7 @@ In `reviewer_page_body()`'s inline `<script>` IIFE, define (and expose on `windo
 "function ankiwebTypeAnsPress(e){if(e&&(e.key==='Enter'||e.keyCode===13)){ankiwebShowAnswer();}}"
 "window.ankiwebTypeAnsPress=ankiwebTypeAnsPress;"
 ```
-If a unit test in `tests/test_reviewer.py` asserts `show_answer_bar()` contains `pycmd('ans')`, update it to assert `ankiwebShowAnswer()` (the button text "Show Answer" is unchanged, so `test_screen_routes.py`'s `"Show Answer" in ...` assertion still passes; the WS tests send `ans` directly, not via the button, so they're unaffected).
+**Update the existing `tests/test_reviewer.py::test_show_answer_bar`**: it asserts `"pycmd('ans')" in html` — change that line to `assert "ankiwebShowAnswer()" in html` (keep the `"Show Answer"` text assertion). `test_screen_routes.py`'s `"Show Answer" in ...` still passes (button text unchanged); the WS tests send `ans`/`typed:` as raw cmds, not via the button, so they're unaffected.
 
 - [ ] **Step 4: Run to verify pass** — `conda run -n ankiweb python -m pytest tests/test_type_answer.py tests/test_type_answer_flow.py tests/test_screen_routes.py tests/test_reviewer_audio.py -v`. The existing `test_screen_routes.py` reviewer tests seed a NON-type Basic card (`session.type_correct` stays None) so no `eval` round-trip happens — verify they still pass.
 
@@ -708,17 +748,22 @@ def test_reviewer_body_has_shortcuts_guarded():
     assert "typeans" in body          # the input guard
     assert "ease" in body             # digit -> ease mapping
 ```
-Append a Playwright test to `tests/test_reviewer_integration.py`:
+Append an inline `sync_playwright` test to `tests/test_reviewer_integration.py` (reuse the EXISTING `live_server` fixture — its Basic card needs no audio; NO `page` fixture):
 ```python
-def test_shortcuts_space_shows_answer_and_digit_guarded(live_server, page):
-    page.goto(live_server + "/reviewer")
-    page.wait_for_function("document.querySelector('#qa').innerHTML.length>0")
-    page.keyboard.press("Space")      # question side -> show answer
-    page.wait_for_function("document.querySelector('#ankiweb-answer').innerHTML.indexOf('ease')>=0")
-    # digit 3 -> rate Good -> advances (queue of 1 -> overview) OR next card
-    # (assert the answer bar appeared as the load-bearing 'space shows answer' behavior)
+def test_shortcut_space_shows_answer(live_server):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(f"{live_server}/reviewer")
+        page.wait_for_function(
+            "document.getElementById('qa').textContent.includes('CapitalFrance')", timeout=6000)
+        page.keyboard.press("Space")      # question side -> show answer (ankiwebShowAnswer)
+        page.wait_for_function(
+            "document.getElementById('qa').textContent.includes('Paris')", timeout=6000)
+        page.wait_for_selector(".ease[data-ease='4']")   # the ease bar appeared
+        browser.close()
 ```
-(Keep the Playwright assertion minimal/robust; the unit test is the primary gate. If the existing integration fixture seeds a single card, pressing 3 navigates to /overview — assert that if convenient.)
+(The unit test `test_reviewer_body_has_shortcuts_guarded` is the primary gate; this confirms the keydown actually fires `ankiwebShowAnswer`.)
 
 - [ ] **Step 2: Run to verify failure** — `conda run -n ankiweb python -m pytest tests/test_reviewer.py::test_reviewer_body_has_shortcuts_guarded -v` → FAIL.
 
@@ -759,7 +804,7 @@ Status, full-suite pytest summary, files changed, self-review, commit SHA, conce
 
 **1. Spec coverage (Plan 4 deferrals from Plan 3):** type-in-answer (Tasks 5-6: question filter injecting `#typeans` + capture via the `typed:` precommand from `ankiwebShowAnswer` + `compare_answer` diff, incl. cloze/nc); `[sound:]` audio (Tasks 1-3: MIME, server extraction + replay buttons + autoplay/replay/per-clip push, HTML5 shell player) + guiPlayAudio wiring (Task 4); keyboard shortcuts (Task 7). Deferred + documented: custom scheduling, auto-advance, Edit (Plan D), flag/mark/leech UI, night mode (follow-up), TTS+recording (out of scope — TTSTag skipped).
 
-**2. Placeholder scan:** No TBD/TODO. The Playwright tests are explicitly allowed to `skip` if browsers aren't installed (matching the existing `test_reviewer_integration.py` `pytest.importorskip`); the unit/WS tests are the primary gates.
+**2. Placeholder scan:** No TBD/TODO. The Playwright tests are written in the EXISTING inline `with sync_playwright() as p: browser=p.chromium.launch(); page=browser.new_page()` style (NO `page` fixture — pytest-playwright isn't installed; a `page` param would ERROR, not skip); `pytest.importorskip("playwright.sync_api")` at the top skips cleanly if the lib is absent. The unit/WS tests are the primary gates.
 
 **3. Type/name consistency:** `render_av_buttons`/`av_sound_filenames`/`answer_side_audio` (reviewer.py); `type_answer_question_filter`/`type_answer_answer_filter`/`_parse_spec` (type_answer.py); `ReviewerSession.type_correct/type_combining/type_font/type_size/typed_answer` (new fields); `render_answer(col, session)` keeps its signature (reads `session.typed_answer` — NO new param); reviewer handler new args `replay`, `play:<side>:<N>`, `typed:<value>`; new shell globals `ankiwebShowAnswer`/`ankiwebTypeAnsPress` (used by `show_answer_bar`'s button onclick, the `#typeans` onkeypress, and the Space shortcut); new bridge call `ankiwebPlayAudio` (server push ↔ shell registerCalls). `col.compare_answer`/`col.extract_cloze_for_typing`/`card.{question,answer}_av_tags`/`card.autoplay`/`card.replay_question_audio_on_answer_side`/`anki.sound.{SoundOrVideoTag,AV_REF_RE}` all verified live. Reuses `reviewer.js` globals `_showQuestion`/`_showAnswer`.
 
@@ -768,3 +813,5 @@ Status, full-suite pytest summary, files changed, self-review, commit SHA, conce
 **5. Risk: existing reviewer tests draining fixed frame counts.** Task 2 adds an `ankiwebPlayAudio` push only for cards WITH audio; type-answer adds no extra frames (the `typed:` cmd is client→server, no push). `test_screen_routes.py` seeds a plain Basic card (no audio, no type), so its fixed-count frame draining is unaffected. Each task's Step 4 re-runs `test_screen_routes.py` to confirm.
 
 **6. Concurrency check (the deadlock that was designed out):** capturing the typed answer with `hub.eval_with_callback` inside the `ans` handler would deadlock — the WS receive loop is blocked `await`ing `dispatch_cmd("ans")`, so it can never read the `{type:result}` that resolves the eval future (true in production AND tests). The `typed:<value>` precommand makes capture two ordered client→server frames, processed sequentially by the existing WS loop with zero concurrency change.
+
+**7. Adversarial verification (3-agent Workflow vs live anki 25.9.4 + reference + existing code) — findings folded in:** anki-typeans-audio confirmed all pylib usage live (markers, `compare_answer` spans, `extract_cloze_for_typing(ord+1)`, av tags, `AV_REF_RE`, `SoundOrVideoTag` vs `TTSTag`, token independence). FIXED: **(blocker)** the type filters now `re.sub` replace-ALL (a `{{FrontSide}}` afmt re-includes the marker → two markers; `count=1` left a literal one) and the fixtures use the stock single-marker afmt; **(major)** answer-side AUTOPLAY plays answer tags only (`av_sound_filenames(card, False)`) — the `replayq` question-prepend (`answer_side_audio`) is kept ONLY for the explicit `replay` path, matching Qt `_showAnswer`; the Task 2 test now asserts this split; **(major)** the Playwright tests are inline (no `page` fixture) with a dedicated audio `live_server` on port 8126; **(minors)** `MIME` (not `_MIME`); `_parse_spec` strips `cloze:` before `nc:` (anki emits `cloze:nc:`); empty/unknown type-field → no input + `type_correct=None` (Qt parity) and `render_answer` always strips the marker; `test_show_answer_bar` assertion updated. **Accepted/deferred (documented):** TTS-ref play buttons render but no-op on click (TTS out of scope); the `<hr id=answer>` `hadHR` relocation is omitted (no effect on the stock template).
