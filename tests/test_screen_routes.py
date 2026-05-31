@@ -79,9 +79,43 @@ def test_overview_decks_navigates_home(client):
         assert msg["args"] == ["/deckbrowser"]
 
 
-def test_reviewer_placeholder(client):
+def test_reviewer_route_serves_real_page(client):
     r = client.get("/reviewer")
     assert r.status_code == 200
     assert 'window.__ankiwebContext="reviewer"' in r.text
-    # placeholder offers a way back to decks
-    assert "pycmd" in r.text and "decks" in r.text
+    assert "/_anki/js/reviewer.js" in r.text          # real reviewer bundle loaded
+    assert "/_anki/css/reviewer.css" in r.text
+    assert "id='qa'" in r.text or 'id="qa"' in r.text
+
+
+def test_reviewer_show_pushes_question(client):
+    did = client.portal.call(client.app.state.service.run, lambda col: col.decks.id("Default"))
+    client.portal.call(client.app.state.service.run, lambda col: col.decks.set_current(did))
+    with client.websocket_connect("/ws?context=reviewer") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "show"})
+        msgs = {}
+        for _ in range(2):  # expect _showQuestion + ankiwebSetAnswerBar (order not guaranteed)
+            m = ws.receive_json()
+            if m["type"] == "call":
+                msgs[m["fn"]] = m["args"]
+        assert "_showQuestion" in msgs
+        assert "ankiwebSetAnswerBar" in msgs
+        assert "Show Answer" in msgs["ankiwebSetAnswerBar"][0]
+
+
+def test_reviewer_ease_answers_and_shows_next(client):
+    # The client fixture already seeds exactly ONE Basic card (do NOT seed again).
+    did = client.portal.call(client.app.state.service.run, lambda col: col.decks.id("Default"))
+    client.portal.call(client.app.state.service.run, lambda col: col.decks.set_current(did))
+    with client.websocket_connect("/ws?context=reviewer") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "show"})
+        ws.receive_json(); ws.receive_json()   # drain the two pushes from show
+        # answer Easy (ease4): a new card graduates to review → today's queue empties
+        # → reviewer navigates to /overview. (Good/ease3 would leave it in learning.)
+        ws.send_json({"type": "cmd", "id": None, "ctx": "reviewer", "arg": "ease4"})
+        nav = None
+        for _ in range(5):  # tolerate an intervening opchanges broadcast frame
+            m = ws.receive_json()
+            if m["type"] == "call" and m["fn"] == "ankiwebNavigate":
+                nav = m["args"]; break
+        assert nav == ["/overview"]

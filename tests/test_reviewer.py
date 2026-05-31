@@ -67,3 +67,13 @@ def test_ease_buttons_bar():
     for i in (1, 2, 3, 4):
         assert f"pycmd('ease{i}')" in html
     assert "3d" in html  # easy interval label rendered
+
+
+def test_reviewer_page_body_loads_qa_and_registers():
+    from ankiweb.screens.reviewer import reviewer_page_body
+    body = reviewer_page_body()
+    assert "id='qa'" in body or 'id="qa"' in body
+    assert "ankiweb-answer" in body
+    assert "registerCalls" in body
+    assert "_showQuestion" in body
+    assert "pycmd('show')" in body

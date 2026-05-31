@@ -4,6 +4,7 @@ from fastapi.responses import HTMLResponse
 from ankiweb.screens.page import render_page
 from ankiweb.screens.deckbrowser import render_deckbrowser_html, make_deckbrowser_handler
 from ankiweb.screens.overview import render_overview_html, make_overview_handler
+from ankiweb.screens.reviewer import reviewer_page_body, make_reviewer_handler
 
 
 def build_screen_router(get_service) -> APIRouter:
@@ -24,10 +25,13 @@ def build_screen_router(get_service) -> APIRouter:
 
     @router.get("/reviewer", response_class=HTMLResponse)
     async def reviewer_page():
-        body = ("<center><h2>Reviewer</h2>"
-                "<p>The study screen arrives in the next milestone.</p>"
-                "<button onclick='pycmd(\"decks\")'>Back to Decks</button></center>")
-        return HTMLResponse(render_page("reviewer", body, ["css/reviewer.css"]))
+        return HTMLResponse(render_page(
+            "reviewer",
+            reviewer_page_body(),
+            ["css/reviewer.css"],
+            ["js/vendor/jquery.min.js", "js/mathjax.js",
+             "js/vendor/mathjax/tex-chtml-full.js", "js/reviewer.js"],
+        ))
 
     return router
 
@@ -36,8 +40,4 @@ def register_screen_handlers(service, hub) -> None:
     hub.set_handler("deckbrowser", make_deckbrowser_handler(service, hub))
     hub.set_handler("overview", make_overview_handler(service, hub))
 
-    async def reviewer_nav(arg: str):
-        if arg == "decks":
-            await hub.push_call("reviewer", "ankiwebNavigate", ["/deckbrowser"])
-        return None
-    hub.set_handler("reviewer", reviewer_nav)
+    hub.set_handler("reviewer", make_reviewer_handler(service, hub))

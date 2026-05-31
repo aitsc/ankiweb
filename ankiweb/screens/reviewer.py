@@ -67,3 +67,59 @@ def ease_buttons_bar(labels) -> str:
             f"<span class='ease-ivl'>{label}</span></button>"
         )
     return "<div class='ease-row'>" + "".join(cells) + "</div>"
+
+
+def reviewer_page_body() -> str:
+    """The reviewer DOM shell + inline script that registers the JS calls the server
+    pushes (_showQuestion/_showAnswer from reviewer.js; ankiwebSetAnswerBar for our bar)
+    and asks the server for the first card on load."""
+    return (
+        "<div id='_mark' hidden>★</div>"
+        "<div id='_flag' hidden>⚑</div>"
+        "<div id='qa' dir='auto'></div>"
+        "<div id='ankiweb-answer'></div>"
+        "<script>(function(){"
+        "var b=window.__ankiwebBridge;"
+        "b.registerCalls({"
+        "_showQuestion:function(){return window._showQuestion.apply(window,arguments);},"
+        "_showAnswer:function(){return window._showAnswer.apply(window,arguments);},"
+        "ankiwebSetAnswerBar:function(h){"
+        "document.getElementById('ankiweb-answer').innerHTML=String(h);}"
+        "});"
+        "window.addEventListener('load',function(){window.pycmd('show');});"
+        "})();</script>"
+    )
+
+
+def make_reviewer_handler(service, hub):
+    """Bridge handler for the 'reviewer' context. Owns one ReviewerSession."""
+    session = ReviewerSession()
+
+    async def _show_next():
+        info = await service.run(lambda col: load_question(col, session))
+        if info is None:  # finished → overview (which renders Congrats)
+            await hub.push_call("reviewer", "ankiwebNavigate", ["/overview"])
+            return
+        await hub.push_call("reviewer", "_showQuestion",
+                            [info["q"], info["a"], info["bodyclass"]])
+        await hub.push_call("reviewer", "ankiwebSetAnswerBar", [show_answer_bar()])
+
+    async def handler(arg: str):
+        if arg == "show":
+            await _show_next()
+        elif arg == "ans":
+            info = await service.run(lambda col: render_answer(col, session))
+            await hub.push_call("reviewer", "_showAnswer", [info["a"]])
+            await hub.push_call("reviewer", "ankiwebSetAnswerBar",
+                                [ease_buttons_bar(info["labels"])])
+        elif arg in ("ease1", "ease2", "ease3", "ease4"):
+            ease = int(arg[4:])
+            await service.run_op(lambda col: answer_current(col, session, ease),
+                                 initiator="reviewer")
+            await _show_next()
+        elif arg == "decks":
+            await hub.push_call("reviewer", "ankiwebNavigate", ["/deckbrowser"])
+        # ignore everything else (e.g. reviewer.js emits "updateToolbar" after each render)
+        return None
+
+    return handler
