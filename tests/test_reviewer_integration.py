@@ -103,3 +103,17 @@ def test_audio_autoplays_on_question(live_server_audio):
         page.wait_for_function("window.__played.length>0", timeout=6000)
         assert any(s.endswith("/hello.mp3") for s in page.evaluate("window.__played"))
         browser.close()
+
+
+def test_shortcut_space_shows_answer(live_server):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(f"{live_server}/reviewer")
+        page.wait_for_function(
+            "document.getElementById('qa').textContent.includes('CapitalFrance')", timeout=6000)
+        page.keyboard.press("Space")      # question side -> show answer (ankiwebShowAnswer)
+        page.wait_for_function(
+            "document.getElementById('qa').textContent.includes('Paris')", timeout=6000)
+        page.wait_for_selector(".ease[data-ease='4']")   # the ease bar appeared
+        browser.close()

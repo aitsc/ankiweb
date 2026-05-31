@@ -92,3 +92,11 @@ def test_reviewer_body_registers_audio_player():
     body = reviewer_page_body()
     assert "ankiwebPlayAudio" in body
     assert "Audio(" in body or "new Audio" in body
+
+
+def test_reviewer_body_has_shortcuts_guarded():
+    from ankiweb.screens.reviewer import reviewer_page_body
+    body = reviewer_page_body()
+    assert "keydown" in body
+    assert "typeans" in body          # the input guard
+    assert "ease" in body             # digit -> ease mapping
