@@ -10,3 +10,6 @@ venv/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+ankiweb/web_assets/
+ankiweb/shell/static/
+*.anki2
