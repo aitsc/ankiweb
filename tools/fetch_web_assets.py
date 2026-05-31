@@ -18,7 +18,10 @@ def main() -> None:
         td = Path(td)
         subprocess.run([sys.executable, "-m", "pip", "download", f"aqt=={AQT_VERSION}",
                         "--no-deps", "-d", str(td)], check=True)
-        wheel = next(td.glob("aqt-*.whl"))
+        wheels = list(td.glob("aqt-*.whl"))
+        if not wheels:
+            raise SystemExit("pip download produced no aqt wheel")
+        wheel = wheels[0]
         with zipfile.ZipFile(wheel) as zf:
             members = [m for m in zf.namelist() if m.startswith("_aqt/data/web/")]
             if not members:
@@ -31,6 +34,8 @@ def main() -> None:
                 if not rel:
                     continue
                 out = DEST / rel
+                if not out.resolve().is_relative_to(DEST.resolve()):
+                    raise SystemExit(f"unsafe path in wheel: {m}")
                 out.parent.mkdir(parents=True, exist_ok=True)
                 if not m.endswith("/"):
                     out.write_bytes(zf.read(m))
