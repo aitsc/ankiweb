@@ -35,6 +35,11 @@ class ReviewerSession:
     card: object = None      # anki.cards.Card with start_timer() already called
     states: object = None    # SchedulingStates from the queue
     context: object = None   # SchedulingContext
+    type_correct: object = None     # expected answer string when the card has {{type:Field}}
+    type_combining: bool = True
+    type_font: str = "Arial"
+    type_size: int = 20
+    typed_answer: str = ""          # the user's typed value, set by the "typed:" command
 
 
 def load_question(col, session: ReviewerSession) -> dict | None:
@@ -50,7 +55,9 @@ def load_question(col, session: ReviewerSession) -> dict | None:
     session.card = card
     session.states = top.states
     session.context = top.context
-    return {"q": render_av_buttons(card.question()),
+    from ankiweb.screens.type_answer import type_answer_question_filter
+    q = type_answer_question_filter(col, card, session, card.question())
+    return {"q": render_av_buttons(q),
             "a": render_av_buttons(card.answer()),
             "bodyclass": f"card card{card.ord + 1}"}
 
