@@ -154,7 +154,9 @@ async def gui_browse(rt, query=None, reorderCards=None):
             raise Exception('Must provide a "columnId" and an "order" property')
         if reorderCards["order"] not in ("ascending", "descending"):
             raise Exception("invalid card order: " + str(reorderCards["order"]))
-        # columnId validity is checked against the live Browser table → deferred to Plan D.
+        valid = await rt.service.run(lambda col: {c.key for c in col.all_browser_columns()})
+        if reorderCards["columnId"] not in valid:
+            raise Exception("invalid columnId: " + str(reorderCards["columnId"]))
     # findCards(None) returns [] (ref); only a real query searches.
     cids = await rt.service.run(
         lambda col: [] if query is None else list(col.find_cards(query)))
@@ -213,7 +215,9 @@ async def gui_add_note_set_data(rt, note=None, append=False):
 
 @action("guiEditNote")
 async def gui_edit_note(rt, note=None):
-    # No editor dialog yet (Plan D); reference returns null. No-op.
+    screen = _ui(rt).current_screen
+    if screen:
+        await rt.hub.push_call(screen, "ankiwebNavigate", ["/edit?nid=" + str(note)])
     return None
 
 

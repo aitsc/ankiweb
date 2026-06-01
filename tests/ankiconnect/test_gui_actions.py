@@ -206,3 +206,24 @@ def test_gui_play_audio_pushes_when_reviewing(client):
         while m["type"] != "call" or m["fn"] != "ankiwebPlayAudio":
             m = ws.receive_json()
         assert "s.mp3" in m["args"][0]
+
+
+def test_gui_edit_note_navigates(client):
+    with client.websocket_connect("/ws?context=deckbrowser") as ws:
+        assert _gui(client, "guiEditNote", note=42) is None
+        m = ws.receive_json()
+        while m["type"] != "call" or m["fn"] != "ankiwebNavigate":
+            m = ws.receive_json()
+        assert m["args"] == ["/edit?nid=42"]
+
+
+def test_gui_browse_invalid_columnid_raises(client):
+    with pytest.raises(Exception, match="invalid columnId"):
+        _gui(client, "guiBrowse", query="",
+             reorderCards={"columnId": "definitelyNotAColumn", "order": "ascending"})
+
+
+def test_gui_browse_valid_columnid_ok(client):
+    result = _gui(client, "guiBrowse", query="",
+                  reorderCards={"columnId": "deck", "order": "descending"})
+    assert isinstance(result, list)
