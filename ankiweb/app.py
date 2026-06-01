@@ -1,7 +1,6 @@
 from __future__ import annotations
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import PlainTextResponse
@@ -59,20 +58,6 @@ def create_app(settings: Settings | None = None, service: CollectionService | No
     static_dir = settings.shell_dir / "static"
     static_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/shell/static", StaticFiles(directory=str(static_dir), check_dir=False), name="shell")
-
-    @app.get("/spike/reviewer")
-    def spike_page():
-        return FileResponse(settings.shell_dir / "reviewer_spike.html")
-
-    @app.post("/spike/push_question")
-    async def spike_push():
-        def render(col):
-            cid = col.find_cards("")[0]
-            card = col.get_card(cid)
-            return card.question(), card.answer()
-        q, a = await app.state.service.run(render)
-        await app.state.hub.push_call("reviewer", "_showQuestion", [q, a, "card card1"])
-        return {"pushed": True}
 
     app.include_router(build_assets_router(settings.assets_dir))       # GET  /_anki/{path}
     app.include_router(build_rpc_router(lambda: app.state.service, lambda: app.state.hub))    # POST /_anki/{method}
