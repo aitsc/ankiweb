@@ -47,7 +47,8 @@ def render_deckbrowser_html(col) -> str:
             _render_node(child, current_id, rows)
     table = "<table cellspacing='0' cellpadding='3' class='decks'>" + "".join(rows) + "</table>"
     studied = f"<div id='studiedToday'><span>{html.escape(col.studied_today())}</span></div>"
-    create = "<button onclick='ankiwebCreateDeck()'>Create Deck</button>"
+    create = ("<button onclick='ankiwebCreateDeck()'>Create Deck</button>"
+              " <a href='/graphs'>Stats</a>")
     return f"<center>{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
 
 

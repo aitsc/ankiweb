@@ -9,7 +9,7 @@ from starlette.responses import PlainTextResponse
 from ankiweb.config import Settings
 from ankiweb.collection_service import CollectionService
 from ankiweb.bridge.hub import BridgeHub
-from ankiweb.assets import build_router as build_assets_router, build_media_router
+from ankiweb.assets import build_router as build_assets_router, build_media_router, build_sveltekit_router
 from ankiweb.anki_rpc import build_router as build_rpc_router
 from ankiweb.bridge.ws import build_router as build_ws_router
 from ankiweb.screens.routes import build_screen_router, register_screen_handlers
@@ -78,6 +78,7 @@ def create_app(settings: Settings | None = None, service: CollectionService | No
     app.include_router(build_rpc_router(lambda: app.state.service))    # POST /_anki/{method}
     app.include_router(build_ws_router(lambda: app.state.hub))         # WS   /ws
     app.include_router(build_screen_router(lambda: app.state.service))  # GET / and /deckbrowser
+    app.include_router(build_sveltekit_router(settings.assets_dir))     # GET  /graphs, /_app/{path}, /favicon.ico
     app.include_router(build_media_router(lambda: app.state.service))  # GET  /{path} — LAST
 
     return app

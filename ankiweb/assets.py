@@ -75,6 +75,39 @@ def build_router(assets_dir: Path) -> APIRouter:
     return router
 
 
+def build_sveltekit_router(assets_dir: Path) -> APIRouter:
+    """Serve the vendored SvelteKit SPA at ROOT paths (its index.html imports /_app/...
+    and client-routes by location.pathname). E2/E3 add more page routes here."""
+    router = APIRouter()
+    index = assets_dir / "sveltekit" / "index.html"
+
+    @router.get("/graphs")
+    def graphs_page() -> Response:
+        return FileResponse(index, media_type="text/html")
+
+    @router.get("/_app/{path:path}")
+    def app_asset(path: str) -> Response:
+        rel = _resolve("_app/" + path)
+        target = (assets_dir / rel).resolve()
+        try:
+            target.relative_to(assets_dir.resolve())
+        except ValueError:
+            return PlainTextResponse("forbidden", status_code=403)
+        if not target.is_file():
+            return PlainTextResponse("not found", status_code=404)
+        headers = {"Cache-Control": "max-age=31536000"} if "immutable" in rel else {}
+        return FileResponse(target, media_type=_mime(rel), headers=headers)
+
+    @router.get("/favicon.ico")
+    def favicon() -> Response:
+        f = assets_dir / "imgs" / "favicon.ico"
+        if f.is_file():
+            return FileResponse(f, media_type="image/x-icon")
+        return Response(status_code=204)
+
+    return router
+
+
 def build_media_router(get_service: Callable) -> APIRouter:
     router = APIRouter()
 
