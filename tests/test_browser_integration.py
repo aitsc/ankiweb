@@ -53,3 +53,21 @@ def test_browse_search_and_open(live_server_browse):
         page.wait_for_function(
             "document.getElementById('detail').textContent.includes('DOGWORD')", timeout=6000)
         browser.close()
+
+
+def test_select_all_and_suspend(live_server_browse):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(f"{live_server_browse}/browse")
+        page.wait_for_function(
+            "document.getElementById('results-body').children.length>=2", timeout=6000)
+        rows = page.locator(".browser-row")
+        rows.nth(0).click()
+        rows.nth(1).click(modifiers=["Control"])
+        page.wait_for_function(
+            "document.querySelectorAll('#results-body tr.selected').length===2", timeout=6000)
+        page.click("#browser-actions >> text=Suspend")
+        page.wait_for_function(
+            "document.querySelectorAll('#results-body tr.selected').length===0", timeout=6000)
+        browser.close()
