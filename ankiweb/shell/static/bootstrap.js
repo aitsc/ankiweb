@@ -81,6 +81,25 @@
     const name = window.prompt("Deck name:");
     if (name) window.pycmd("create:" + name);
   };
+  window.ankiwebImportFile = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".csv,.tsv,.txt,.apkg,.zip";
+    input.onchange = async () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append("file", f);
+      const resp = await fetch("/import/upload", { method: "POST", body: fd });
+      if (!resp.ok) {
+        window.alert("Import failed: " + await resp.text());
+        return;
+      }
+      const { route, path } = await resp.json();
+      window.location.href = "/" + route + "/" + encodeURIComponent(path);
+    };
+    input.click();
+  };
   window.addEventListener("anki-opchanges", (e) => {
     const detail = e.detail;
     const flags = detail.flags || {};

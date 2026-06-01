@@ -93,6 +93,14 @@ def build_sveltekit_router(assets_dir: Path) -> APIRouter:
     def change_notetype_page(ids: str) -> Response:
         return FileResponse(index, media_type="text/html")
 
+    @router.get("/import-csv/{path:path}")
+    def import_csv_page(path: str) -> Response:
+        return FileResponse(index, media_type="text/html")
+
+    @router.get("/import-anki-package/{path:path}")
+    def import_anki_package_page(path: str) -> Response:
+        return FileResponse(index, media_type="text/html")
+
     @router.get("/_app/{path:path}")
     def app_asset(path: str) -> Response:
         rel = _resolve("_app/" + path)

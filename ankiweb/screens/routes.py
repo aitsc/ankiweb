@@ -89,6 +89,23 @@ def build_screen_router(get_service) -> APIRouter:
         fname = await get_service().run(lambda col: col.media.write_data(base, data))
         return {"filename": fname}
 
+    @router.post("/import/upload")
+    async def import_upload(file: UploadFile):
+        from fastapi.responses import JSONResponse
+        from ankiweb import import_tmp
+        service = get_service()
+        import_tmp.gc(service.settings)  # lazy TTL sweep
+        name = (file.filename or "").lower()
+        ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+        routes = {".csv": "import-csv", ".tsv": "import-csv", ".txt": "import-csv",
+                  ".apkg": "import-anki-package", ".zip": "import-anki-package"}
+        route = routes.get(ext)
+        if route is None:
+            return JSONResponse({"error": f"unsupported file type: {ext or '(none)'}"}, status_code=400)
+        dest = import_tmp.allocate(service.settings, ext)
+        dest.write_bytes(await file.read())
+        return {"route": route, "path": str(dest)}
+
     return router
 
 

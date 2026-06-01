@@ -11,6 +11,7 @@ class Settings:
     port: int = 8000
     assets_dir: Path = Path(__file__).parent / "web_assets"
     shell_dir: Path = Path(__file__).parent / "shell"
+    import_tmp_dir: Path = Path(__file__).parent / "_import_tmp"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -19,4 +20,5 @@ class Settings:
             collection_path=Path(os.environ.get("ANKIWEB_COLLECTION", str(default))),
             host=os.environ.get("ANKIWEB_HOST", "127.0.0.1"),
             port=int(os.environ.get("ANKIWEB_PORT", "8000")),
+            import_tmp_dir=Path(os.environ["ANKIWEB_IMPORT_TMP_DIR"]) if os.environ.get("ANKIWEB_IMPORT_TMP_DIR") else (Path(os.environ.get("ANKIWEB_COLLECTION", str(default))).parent / "import-tmp"),
         )

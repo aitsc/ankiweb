@@ -29,6 +29,10 @@ class CollectionService:
         self._col: Collection | None = None
         self._subscribers: list = []
 
+    @property
+    def settings(self):
+        return self._settings
+
     async def open(self) -> None:
         path = self._settings.collection_path
         path.parent.mkdir(parents=True, exist_ok=True)
