@@ -89,6 +89,10 @@ def build_sveltekit_router(assets_dir: Path) -> APIRouter:
     def deck_options_page(deck_id: str) -> Response:
         return FileResponse(index, media_type="text/html")
 
+    @router.get("/change-notetype/{ids:path}")
+    def change_notetype_page(ids: str) -> Response:
+        return FileResponse(index, media_type="text/html")
+
     @router.get("/_app/{path:path}")
     def app_asset(path: str) -> Response:
         rel = _resolve("_app/" + path)

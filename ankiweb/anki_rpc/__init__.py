@@ -6,7 +6,7 @@ from ankiweb.anki_rpc.passthrough import PASSTHROUGH, camel_to_snake
 BINARY = "application/binary"
 
 
-def build_router(get_service) -> APIRouter:
+def build_router(get_service, get_hub=None) -> APIRouter:
     router = APIRouter()
 
     @router.post("/_anki/{method}")
@@ -19,9 +19,10 @@ def build_router(get_service) -> APIRouter:
         snake = camel_to_snake(method)
 
         from ankiweb.anki_rpc.handlers import CUSTOM
+        hub = get_hub() if get_hub is not None else None
         try:
             if method in CUSTOM:
-                out = await CUSTOM[method](service, body)
+                out = await CUSTOM[method](service, body, hub)
             elif snake in PASSTHROUGH:
                 out = await service.backend_raw(snake, body)
             else:

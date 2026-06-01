@@ -75,7 +75,7 @@ def create_app(settings: Settings | None = None, service: CollectionService | No
         return {"pushed": True}
 
     app.include_router(build_assets_router(settings.assets_dir))       # GET  /_anki/{path}
-    app.include_router(build_rpc_router(lambda: app.state.service))    # POST /_anki/{method}
+    app.include_router(build_rpc_router(lambda: app.state.service, lambda: app.state.hub))    # POST /_anki/{method}
     app.include_router(build_ws_router(lambda: app.state.hub))         # WS   /ws
     app.include_router(build_screen_router(lambda: app.state.service))  # GET / and /deckbrowser
     app.include_router(build_sveltekit_router(settings.assets_dir))     # GET  /graphs, /_app/{path}, /favicon.ico

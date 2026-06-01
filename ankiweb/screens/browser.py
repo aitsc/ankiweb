@@ -222,6 +222,19 @@ def make_browser_handler(service, hub):
                 await service.run_op(lambda col: col.set_deck(cids, col.decks.id(rest)),
                                      initiator="browser")
                 await _reload()
+        elif cmd == "changenotetype":
+            cids = list(hub.ui_state.selected_card_ids or [])
+            nids = list(hub.ui_state.selected_note_ids or [])
+            if not nids and cids:
+                nids = await service.run(lambda col: _nids(col, cids))
+            if nids:
+                try:
+                    old = await service.run(
+                        lambda col: col.models.get_single_notetype_of_notes(nids))
+                except Exception:
+                    return None
+                await hub.push_call("browser", "ankiwebNavigate",
+                                    ["/change-notetype/" + str(old)])
         elif cmd in ("addtag", "removetag"):
             cids = list(hub.ui_state.selected_card_ids or [])
             if cids and rest:
