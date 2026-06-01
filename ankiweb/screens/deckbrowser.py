@@ -48,6 +48,7 @@ def render_deckbrowser_html(col) -> str:
     table = "<table cellspacing='0' cellpadding='3' class='decks'>" + "".join(rows) + "</table>"
     studied = f"<div id='studiedToday'><span>{html.escape(col.studied_today())}</span></div>"
     create = ("<button onclick='ankiwebCreateDeck()'>Create Deck</button>"
+              " <button onclick='pycmd(\"createfiltered\")'>Create Filtered Deck</button>"
               " <a href='/graphs'>Stats</a>")
     return f"<center>{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
 
@@ -84,7 +85,12 @@ def make_deckbrowser_handler(service, hub):
                 )
                 await hub.push_call("deckbrowser", "ankiwebReload", [])
         elif cmd == "opts":
-            await hub.push_call("deckbrowser", "ankiwebNavigate", ["/deck-options/" + rest])
+            did = int(rest)
+            is_dyn = await service.run(lambda col: bool(col.decks.get(did).get("dyn")))
+            path = (f"/filtered-deck/{did}") if is_dyn else (f"/deck-options/{did}")
+            await hub.push_call("deckbrowser", "ankiwebNavigate", [path])
+        elif cmd == "createfiltered":
+            await hub.push_call("deckbrowser", "ankiwebNavigate", ["/filtered-deck"])
         return None
 
     return handler

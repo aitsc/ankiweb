@@ -31,7 +31,9 @@ def make_overview_handler(service, hub):
             await hub.push_call("overview", "ankiwebNavigate", ["/custom-study"])
         elif arg == "opts":
             did = await service.run(lambda col: col.decks.get_current_id())
-            await hub.push_call("overview", "ankiwebNavigate", ["/deck-options/" + str(did)])
+            is_dyn = await service.run(lambda col: bool(col.decks.get(did).get("dyn")))
+            path = (f"/filtered-deck/{did}") if is_dyn else (f"/deck-options/{did}")
+            await hub.push_call("overview", "ankiwebNavigate", [path])
         # 'description' deferred to later plans.
         return None
 
