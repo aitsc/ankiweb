@@ -20,9 +20,10 @@ _STYLE = (
     "#results{width:100%;border-collapse:collapse}"
     "#results th,#results td{text-align:left;padding:3px 6px;border-bottom:1px solid #eee}"
     ".browser-row{cursor:pointer}.browser-row:hover{background:#eef}"
-    "#detail{width:280px;padding:6px;border-left:1px solid #ccc}"
+    "#detail{width:46%;padding:6px;border-left:1px solid #ccc}"
     "#detail .fldname{font-weight:bold;color:#888;font-size:11px;margin-top:6px}"
     "#results tr.selected{background:#cde}"
+    ".editor-frame{width:100%;height:78vh;border:0}"
     "</style>"
 )
 
@@ -68,6 +69,7 @@ def render_browser_html(col) -> str:
         "</div></div>"
         "<script>(function(){"
         "var b=window.__ankiwebBridge;"
+        "window.__ankiwebOnOpchanges=function(){window.pycmd('refresh');};"
         "var _sel=[],_anchor=null;"
         "function _rows(){return Array.prototype.slice.call("
         "document.querySelectorAll('#results-body tr[data-cid]'));}"
@@ -180,15 +182,15 @@ def make_browser_handler(service, hub):
             await _do_search(f'deck:"{name}"')
         elif cmd == "searchtag":
             await _do_search(f'tag:"{rest}"')
+        elif cmd == "refresh":
+            await _do_search(hub.ui_state.last_browse_query or "")
         elif cmd in ("select", "open"):
             cids = [int(c) for c in rest.split(",") if c] if cmd == "select" else [int(rest)]
-
-            def fn(col):
-                detail = _detail_html(col, cids[0]) if len(cids) == 1 else ""
-                return _nids(col, cids), detail
-            nids, detail = await service.run(fn)
+            nids = await service.run(lambda col: _nids(col, cids))
             hub.ui_state.selected_card_ids = cids
             hub.ui_state.selected_note_ids = nids
+            detail = (f"<iframe class='editor-frame' src='/edit?nid={nids[0]}'></iframe>"
+                      if len(cids) == 1 and nids else "")
             await hub.push_call("browser", "ankiwebSetDetail", [detail])
         elif cmd in ("suspend", "unsuspend", "forget", "delete"):
             cids = list(hub.ui_state.selected_card_ids or [])

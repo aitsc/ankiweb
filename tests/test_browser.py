@@ -67,8 +67,7 @@ def test_browse_open_pushes_detail_and_selection(client):
     with client.websocket_connect("/ws?context=browser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"open:{cid}"})
         detail = _drain_call(ws, "ankiwebSetDetail")[0]
-        assert "DOG" in detail
-        assert "Front" in detail and "Back" in detail
+        assert "iframe" in detail and "/edit?nid=" in detail
     assert hub.ui_state.selected_card_ids == [cid]
     assert len(hub.ui_state.selected_note_ids) == 1
 
@@ -103,7 +102,7 @@ def test_select_one_pushes_detail(client):
     with client.websocket_connect("/ws?context=browser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
         detail = _drain_call(ws, "ankiwebSetDetail")[0]
-        assert "DOG" in detail
+        assert "iframe" in detail and "/edit?nid=" in detail
 
 
 def test_delete_removes_notes(client):
@@ -152,3 +151,12 @@ def test_setdue_runs(client):
         _drain_call(ws, "ankiwebSetDetail")
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "setdue:0"})
         _drain_call(ws, "ankiwebSetRows")
+
+
+def test_browse_refresh_repushes_rows(client):
+    with client.websocket_connect("/ws?context=browser") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "search:dog"})
+        _drain_call(ws, "ankiwebSetRows")
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "refresh"})
+        args = _drain_call(ws, "ankiwebSetRows")
+        assert "dog" in args[0]

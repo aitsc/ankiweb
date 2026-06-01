@@ -10,3 +10,8 @@ def test_shell_bundle_has_nav_helpers():
     data = out.read_bytes()
     assert b"ankiwebNavigate" in data
     assert b"anki-opchanges" in data
+
+def test_bootstrap_has_opchanges_optout():
+    from pathlib import Path
+    js = Path("ankiweb/shell/static/bootstrap.js").read_text()
+    assert "__ankiwebOnOpchanges" in js

@@ -25,12 +25,19 @@ bridge.registerCalls({
   if (name) (window as any).pycmd("create:" + name);
 };
 
-// Cross-screen refresh: reload when another screen's op changed our data.
-// Skip our own changes (initiator === ctx) — self-initiated refreshes use ankiwebReload.
+// Cross-screen refresh: a screen may set window.__ankiwebOnOpchanges to handle this
+// itself (e.g. the Browser re-searches in place to keep an embedded editor iframe alive);
+// otherwise reload when another screen's op changed our data.
 window.addEventListener("anki-opchanges", (e: Event) => {
   const detail = (e as CustomEvent).detail;
   const flags = detail.flags || {};
-  if (detail.initiator !== ctx && (flags.study_queues || flags.deck || flags.card || flags.note)) {
+  if (detail.initiator === ctx) return;
+  const custom = (window as any).__ankiwebOnOpchanges;
+  if (typeof custom === "function") {
+    custom(detail);
+    return;
+  }
+  if (flags.study_queues || flags.deck || flags.card || flags.note) {
     location.reload();
   }
 });
