@@ -11,6 +11,7 @@ from ankiweb.screens.reviewer import reviewer_page_body, make_reviewer_handler
 from ankiweb.screens.browser import render_browser_html, make_browser_handler
 from ankiweb.screens.editor import editor_page_body, make_editor_handler
 from ankiweb.screens.add import render_add_html, make_add_handler
+from ankiweb.screens.custom_study import render_custom_study_html, make_custom_study_handler
 
 
 def build_screen_router(get_service) -> APIRouter:
@@ -28,6 +29,12 @@ def build_screen_router(get_service) -> APIRouter:
         service = get_service()
         body = await service.run(render_overview_html)
         return HTMLResponse(render_page("overview", body, ["css/overview.css"]))
+
+    @router.get("/custom-study", response_class=HTMLResponse)
+    async def custom_study_page():
+        service = get_service()
+        body = await service.run(render_custom_study_html)
+        return HTMLResponse(render_page("customstudy", body))
 
     @router.get("/reviewer", response_class=HTMLResponse)
     async def reviewer_page():
@@ -75,6 +82,7 @@ def build_screen_router(get_service) -> APIRouter:
 def register_screen_handlers(service, hub) -> None:
     hub.set_handler("deckbrowser", make_deckbrowser_handler(service, hub))
     hub.set_handler("overview", make_overview_handler(service, hub))
+    hub.set_handler("customstudy", make_custom_study_handler(service, hub))
 
     hub.set_handler("reviewer", make_reviewer_handler(service, hub))
     hub.set_handler("browser", make_browser_handler(service, hub))

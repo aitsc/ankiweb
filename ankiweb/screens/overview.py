@@ -27,7 +27,12 @@ def make_overview_handler(service, hub):
                     await service.run_op(lambda col: col.sched.empty_filtered_deck(did),
                                          initiator="overview")
                 await hub.push_call("overview", "ankiwebReload", [])
-        # 'opts' (deck options), 'studymore' (custom study), 'description' deferred to later plans.
+        elif arg == "studymore":
+            await hub.push_call("overview", "ankiwebNavigate", ["/custom-study"])
+        elif arg == "opts":
+            did = await service.run(lambda col: col.decks.get_current_id())
+            await hub.push_call("overview", "ankiwebNavigate", ["/deck-options/" + str(did)])
+        # 'description' deferred to later plans.
         return None
 
     return handler
