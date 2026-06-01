@@ -99,3 +99,23 @@ def test_editor_savetags(client):
         ws.send_json({"type": "cmd", "id": None, "ctx": "editor", "arg": f"load:{nid}"})
         data = _drain_call(ws, "ankiwebLoadNote")[0]
         assert data["tags"] == ["x", "y"]
+
+
+def test_upload_media_stores_and_returns_name(client):
+    r = client.post("/upload_media", files={"file": ("x.png", b"\x89PNG-bytes", "image/png")})
+    assert r.status_code == 200
+    fname = r.json()["filename"]
+    assert fname.endswith(".png")
+    assert client.portal.call(client.app.state.service.run, lambda col: col.media.have(fname))
+
+
+def test_upload_media_derives_extension_from_mime(client):
+    r = client.post("/upload_media", files={"file": ("noext", b"data", "image/jpeg")})
+    assert r.json()["filename"].endswith(".jpg")
+
+
+def test_editor_body_has_paste_handler(client):
+    from ankiweb.screens.editor import editor_page_body
+    body = editor_page_body(1)
+    assert ("addEventListener('paste'" in body) or ('addEventListener("paste"' in body)
+    assert "stopImmediatePropagation" in body and "pasteHTML" in body and "/upload_media" in body

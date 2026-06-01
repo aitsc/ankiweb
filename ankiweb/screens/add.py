@@ -1,7 +1,7 @@
 from __future__ import annotations
 import html
 import json
-from ankiweb.screens.editor import _munge
+from ankiweb.screens.editor import _munge, paste_handler_js
 from ankiweb.ankiconnect.actions._helpers import check_addable
 from ankiweb.collection_service import op_changes_to_flags
 
@@ -59,6 +59,7 @@ def add_page_body(deck_opts: str, nt_opts: str) -> str:
         "t.textContent=String(m);setTimeout(function(){t.textContent='';},2000);}}"
         "});"
         "require('anki/ui').loaded.then(function(){window.pycmd('addReady');});"
+        + paste_handler_js() +
         "})();</script>"
     )
 

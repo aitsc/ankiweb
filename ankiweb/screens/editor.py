@@ -34,6 +34,28 @@ def _save_field(col, nid: int, ord_: int, html: str):
     return None
 
 
+def paste_handler_js() -> str:
+    """A document-capture paste handler that takes over from editor.js (which prevent-defaults
+    paste and fires a payload-less bridgeCommand('paste')). Inserts via the editor's pasteHTML."""
+    return (
+        "document.addEventListener('paste',function(e){"
+        "var cd=e.clipboardData;if(!cd)return;"
+        "var img=null,items=cd.items||[];"
+        "for(var i=0;i<items.length;i++){if(items[i].kind==='file'&&items[i].type&&"
+        "items[i].type.indexOf('image/')===0){img=items[i].getAsFile();break;}}"
+        "var html=cd.getData('text/html'),text=cd.getData('text/plain');"
+        "if(!img&&!html&&!text)return;"
+        "e.preventDefault();e.stopImmediatePropagation();"
+        "if(img){var f=new FormData();f.append('file',img,img.name||'paste.png');"
+        "fetch('/upload_media',{method:'POST',body:f}).then(function(r){return r.json();})"
+        ".then(function(j){window.pasteHTML('<img src=\"'+j.filename+'\">',false,false);});}"
+        "else if(html){window.pasteHTML(html,false,false);}"
+        "else{var s=text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')"
+        ".replace(/\\n/g,'<br>');window.pasteHTML(s,false,false);}"
+        "},true);"
+    )
+
+
 def editor_page_body(nid: int) -> str:
     return (
         f"<script>window.__ankiwebEditNid={int(nid)}</script>"
@@ -53,6 +75,7 @@ def editor_page_body(nid: int) -> str:
         "require('anki/ui').loaded.then(function(){"
         "window.pycmd('load:'+window.__ankiwebEditNid);"
         "});"
+        + paste_handler_js() +
         "})();</script>"
     )
 

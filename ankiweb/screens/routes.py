@@ -1,6 +1,9 @@
 from __future__ import annotations
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile
 from fastapi.responses import HTMLResponse
+
+_MIME_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
+             "image/webp": ".webp", "image/svg+xml": ".svg", "image/bmp": ".bmp"}
 from ankiweb.screens.page import render_page
 from ankiweb.screens.deckbrowser import render_deckbrowser_html, make_deckbrowser_handler
 from ankiweb.screens.overview import render_overview_html, make_overview_handler
@@ -56,6 +59,15 @@ def build_screen_router(get_service) -> APIRouter:
         return HTMLResponse(render_page(
             "add", body, ["css/editor.css", "css/editable.css"],
             ["js/mathjax.js", "js/editor.js"]))
+
+    @router.post("/upload_media")
+    async def upload_media(file: UploadFile):
+        data = await file.read()
+        base = (file.filename or "paste").rsplit("/", 1)[-1].rsplit("\\", 1)[-1] or "paste"
+        if "." not in base:
+            base += _MIME_EXT.get(file.content_type or "", ".png")
+        fname = await get_service().run(lambda col: col.media.write_data(base, data))
+        return {"filename": fname}
 
     return router
 

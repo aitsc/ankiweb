@@ -89,3 +89,9 @@ def test_setdeck_and_tags_applied(client):
     note = _run(client, lambda col: col.get_note(nid))
     assert "mytag" in note.tags
     assert _run(client, lambda col, n=note: col.get_card(n.card_ids()[0]).did) == other
+
+
+def test_add_body_has_paste_handler(client):
+    from ankiweb.screens.add import render_add_html
+    body = client.portal.call(client.app.state.service.run, render_add_html)
+    assert "pasteHTML" in body and "/upload_media" in body
