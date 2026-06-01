@@ -59,3 +59,33 @@ def test_editor_mounts_and_loads(live_server_edit):
             timeout=8000)
         assert not errors, errors
         browser.close()
+
+
+def test_browse_single_select_embeds_editor(live_server_edit):
+    url, nid = live_server_edit
+    with sync_playwright() as p:
+        browser = p.chromium.launch(); page = browser.new_page()
+        page.goto(f"{url}/browse")
+        page.wait_for_function(
+            "document.getElementById('results-body').children.length>=1", timeout=6000)
+        page.locator(".browser-row").first.click()           # single-select -> embed editor
+        page.wait_for_selector("#detail iframe.editor-frame", timeout=6000)
+        # the editor mounts INSIDE the iframe (reach into contentDocument)
+        page.wait_for_function(
+            "() => { const f=document.querySelector('#detail iframe.editor-frame'); "
+            "return f && f.contentDocument && "
+            "f.contentDocument.querySelector('.note-editor')!==null; }",
+            timeout=8000)
+        browser.close()
+
+
+def test_reviewer_e_opens_editor(live_server_edit):
+    url, nid = live_server_edit
+    with sync_playwright() as p:
+        browser = p.chromium.launch(); page = browser.new_page()
+        page.goto(f"{url}/reviewer")
+        page.wait_for_function(
+            "document.getElementById('qa').textContent.includes('CapitalFrance')", timeout=8000)
+        page.keyboard.press("e")
+        page.wait_for_url("**/edit?nid=*", timeout=6000)
+        browser.close()
