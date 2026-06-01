@@ -6,6 +6,7 @@ from ankiweb.screens.deckbrowser import render_deckbrowser_html, make_deckbrowse
 from ankiweb.screens.overview import render_overview_html, make_overview_handler
 from ankiweb.screens.reviewer import reviewer_page_body, make_reviewer_handler
 from ankiweb.screens.browser import render_browser_html, make_browser_handler
+from ankiweb.screens.editor import editor_page_body, make_editor_handler
 
 
 def build_screen_router(get_service) -> APIRouter:
@@ -40,6 +41,13 @@ def build_screen_router(get_service) -> APIRouter:
         body = await service.run(render_browser_html)
         return HTMLResponse(render_page("browser", body))
 
+    @router.get("/edit", response_class=HTMLResponse)
+    async def edit_page(nid: int):
+        return HTMLResponse(render_page(
+            "editor", editor_page_body(nid),
+            ["css/editor.css", "css/editable.css"],
+            ["js/mathjax.js", "js/editor.js"]))
+
     return router
 
 
@@ -49,3 +57,4 @@ def register_screen_handlers(service, hub) -> None:
 
     hub.set_handler("reviewer", make_reviewer_handler(service, hub))
     hub.set_handler("browser", make_browser_handler(service, hub))
+    hub.set_handler("editor", make_editor_handler(service, hub))
