@@ -5,6 +5,7 @@ from ankiweb.screens.page import render_page
 from ankiweb.screens.deckbrowser import render_deckbrowser_html, make_deckbrowser_handler
 from ankiweb.screens.overview import render_overview_html, make_overview_handler
 from ankiweb.screens.reviewer import reviewer_page_body, make_reviewer_handler
+from ankiweb.screens.browser import render_browser_html, make_browser_handler
 
 
 def build_screen_router(get_service) -> APIRouter:
@@ -33,6 +34,12 @@ def build_screen_router(get_service) -> APIRouter:
              "js/vendor/mathjax/tex-chtml-full.js", "js/reviewer.js"],
         ))
 
+    @router.get("/browse", response_class=HTMLResponse)
+    async def browse_page():
+        service = get_service()
+        body = await service.run(render_browser_html)
+        return HTMLResponse(render_page("browser", body))
+
     return router
 
 
@@ -41,3 +48,4 @@ def register_screen_handlers(service, hub) -> None:
     hub.set_handler("overview", make_overview_handler(service, hub))
 
     hub.set_handler("reviewer", make_reviewer_handler(service, hub))
+    hub.set_handler("browser", make_browser_handler(service, hub))
