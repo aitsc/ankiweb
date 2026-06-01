@@ -154,6 +154,7 @@ def reviewer_page_body() -> str:
         "  if(k===' '||k==='Enter'){e.preventDefault();if(_side==='question'){window.ankiwebShowAnswer();}else{window.pycmd('ease3');}}"
         "  else if(_side==='answer'&&(k==='1'||k==='2'||k==='3'||k==='4')){e.preventDefault();window.pycmd('ease'+k);}"
         "  else if(k==='r'||k==='R'||k==='F5'){e.preventDefault();window.pycmd('replay');}"
+        "  else if(k==='e'||k==='E'){e.preventDefault();window.pycmd('edit');}"
         "});"
         "window.addEventListener('load',function(){window.pycmd('show');});"
         "})();</script>"
@@ -203,6 +204,10 @@ def make_reviewer_handler(service, hub):
             await service.run_op(lambda col: answer_current(col, session, ease),
                                  initiator="reviewer")
             await _show_next()
+        elif arg == "edit":
+            if session.card is not None:
+                nid = await service.run(lambda col: session.card.nid)
+                await hub.push_call("reviewer", "ankiwebNavigate", ["/edit?nid=" + str(nid)])
         elif arg == "starttimer":
             if session.card is not None:
                 await service.run(lambda col: session.card.start_timer())

@@ -100,3 +100,9 @@ def test_reviewer_body_has_shortcuts_guarded():
     assert "keydown" in body
     assert "typeans" in body          # the input guard
     assert "ease" in body             # digit -> ease mapping
+
+
+def test_reviewer_body_has_edit_shortcut():
+    from ankiweb.screens.reviewer import reviewer_page_body
+    body = reviewer_page_body()
+    assert "'edit'" in body or '"edit"' in body
