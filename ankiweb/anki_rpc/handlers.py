@@ -119,3 +119,57 @@ CUSTOM["getCsvMetadata"] = get_csv_metadata
 CUSTOM["importCsv"] = import_csv
 CUSTOM["importAnkiPackage"] = import_anki_package
 CUSTOM["importDone"] = _noop
+
+
+async def _emit_opchanges(service, out: bytes) -> None:
+    """Parse a raw OpChanges reply and broadcast its flags (image-occlusion writes)."""
+    try:
+        from anki.collection_pb2 import OpChanges
+        from ankiweb.collection_service import op_changes_to_flags
+        op = OpChanges()
+        op.ParseFromString(bytes(out))
+        flags = op_changes_to_flags(op)
+        if any(flags.values()):
+            await service.emit(flags, "image-occlusion")
+    except Exception:
+        pass
+
+
+async def get_image_for_occlusion(service, body: bytes, hub) -> bytes:
+    import os
+    import anki.image_occlusion_pb2 as iopb
+    from ankiweb import import_tmp
+    req = iopb.GetImageForOcclusionRequest()
+    req.ParseFromString(bytes(body))
+    if req.path and not import_tmp.is_within(service.settings, req.path):
+        raise ValueError("image path not allowed")
+    # touch-on-read: keep an in-progress drawing session's temp image fresh vs the GC
+    try:
+        if req.path and os.path.isfile(req.path):
+            os.utime(req.path, None)
+    except OSError:
+        pass
+    return await service.backend_raw("get_image_for_occlusion", body)
+
+
+async def add_image_occlusion_note(service, body: bytes, hub) -> bytes:
+    import anki.image_occlusion_pb2 as iopb
+    from ankiweb import import_tmp
+    req = iopb.AddImageOcclusionNoteRequest()
+    req.ParseFromString(bytes(body))
+    if not import_tmp.is_within(service.settings, req.image_path):
+        raise ValueError("image path not allowed")
+    out = await service.backend_raw("add_image_occlusion_note", body)
+    await _emit_opchanges(service, out)
+    return out
+
+
+async def update_image_occlusion_note(service, body: bytes, hub) -> bytes:
+    out = await service.backend_raw("update_image_occlusion_note", body)
+    await _emit_opchanges(service, out)
+    return out
+
+
+CUSTOM["getImageForOcclusion"] = get_image_for_occlusion
+CUSTOM["addImageOcclusionNote"] = add_image_occlusion_note
+CUSTOM["updateImageOcclusionNote"] = update_image_occlusion_note

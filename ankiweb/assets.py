@@ -101,6 +101,10 @@ def build_sveltekit_router(assets_dir: Path) -> APIRouter:
     def import_anki_package_page(path: str) -> Response:
         return FileResponse(index, media_type="text/html")
 
+    @router.get("/image-occlusion/{path:path}")
+    def image_occlusion_page(path: str) -> Response:
+        return FileResponse(index, media_type="text/html")
+
     @router.get("/_app/{path:path}")
     def app_asset(path: str) -> Response:
         rel = _resolve("_app/" + path)
