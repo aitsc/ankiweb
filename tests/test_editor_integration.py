@@ -89,3 +89,43 @@ def test_reviewer_e_opens_editor(live_server_edit):
         page.keyboard.press("e")
         page.wait_for_url("**/edit?nid=*", timeout=6000)
         browser.close()
+
+
+def test_paste_image_uploads_and_inserts(live_server_edit):
+    url, nid = live_server_edit
+    with sync_playwright() as p:
+        browser = p.chromium.launch(); page = browser.new_page()
+        page.on("pageerror", lambda e: print("PAGEERROR:", e))
+        page.goto(f"{url}/edit?nid={nid}")
+        page.wait_for_function("document.querySelector('.note-editor')!==null", timeout=8000)
+        page.evaluate("window.focusField(0)")
+        # synthesize an image paste using the same dispatch technique proven in the spike:
+        # construct DataTransfer with a PNG file, then dispatch ClipboardEvent with
+        # clipboardData:dt.  The document-capture handler (paste_handler_js) intercepts,
+        # POSTs to /upload_media, and inserts <img src="filename"> via pasteHTML.
+        page.evaluate(
+            "(function(){"
+            "var fc=document.querySelector('.field-container');"
+            "var host=fc.querySelector('.rich-text-editable');"
+            "var ed=host.shadowRoot.querySelector('[contenteditable]');"
+            "var bytes=new Uint8Array([137,80,78,71,13,10,26,10]);"
+            "var file=new File([bytes],'p.png',{type:'image/png'});"
+            "var dt=new DataTransfer(); dt.items.add(file);"
+            "ed.focus();"
+            "var evt=new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,"
+            "cancelable:true,composed:true});"
+            "ed.dispatchEvent(evt);"
+            "})()")
+        # the handler uploads then inserts <img src="..."> into the field (deep-walk shadow roots)
+        page.wait_for_function(
+            "(function(){"
+            "function walk(r,a){"
+            "r.querySelectorAll('*').forEach(function(el){"
+            "if(el.shadowRoot){walk(el.shadowRoot,a);}"
+            "if(el.tagName==='IMG'){a.push(el.getAttribute('src'));}"
+            "});}"
+            "var a=[]; walk(document,a);"
+            "return a.some(function(s){return s&&s.indexOf('.png')>=0;});"
+            "})()",
+            timeout=8000)
+        browser.close()
