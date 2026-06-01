@@ -6,7 +6,8 @@ import re
 # (mediasrv.py:659-701); extend per page as needed in later plans.
 PASSTHROUGH: set[str] = {
     "latest_progress", "get_custom_colours", "get_deck_names", "i18n_resources",
-    "get_field_names", "get_note", "get_notetype_names", "get_change_notetype_info",
+    "get_field_names", "get_import_anki_package_presets",
+    "get_note", "get_notetype_names", "get_change_notetype_info",
     "card_stats", "get_review_logs", "graphs", "get_graph_preferences",
     "set_graph_preferences", "complete_tag", "congrats_info",
     "get_deck_configs_for_update",

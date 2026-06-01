@@ -66,3 +66,56 @@ async def change_notetype(service, body: bytes, hub=None) -> bytes:
 
 
 CUSTOM["changeNotetype"] = change_notetype
+
+
+async def _emit_import_changes(service, out: bytes) -> None:
+    try:
+        import anki.import_export_pb2 as ie
+        from ankiweb.collection_service import op_changes_to_flags
+        resp = ie.ImportResponse()
+        resp.ParseFromString(bytes(out))
+        flags = op_changes_to_flags(resp.changes)
+        if any(flags.values()):
+            await service.emit(flags, "import")
+    except Exception:
+        pass
+
+
+async def get_csv_metadata(service, body: bytes, hub) -> bytes:
+    import anki.import_export_pb2 as ie
+    from ankiweb import import_tmp
+    req = ie.CsvMetadataRequest()
+    req.ParseFromString(bytes(body))
+    if req.path and not import_tmp.is_within(service.settings, req.path):
+        raise ValueError("import path not allowed")
+    return await service.backend_raw("get_csv_metadata", body)
+
+
+async def import_csv(service, body: bytes, hub) -> bytes:
+    import anki.import_export_pb2 as ie
+    from ankiweb import import_tmp
+    req = ie.ImportCsvRequest()
+    req.ParseFromString(bytes(body))
+    if not import_tmp.is_within(service.settings, req.path):
+        raise ValueError("import path not allowed")
+    out = await service.backend_raw("import_csv", body)
+    await _emit_import_changes(service, out)
+    return out
+
+
+async def import_anki_package(service, body: bytes, hub) -> bytes:
+    import anki.import_export_pb2 as ie
+    from ankiweb import import_tmp
+    req = ie.ImportAnkiPackageRequest()
+    req.ParseFromString(bytes(body))
+    if not import_tmp.is_within(service.settings, req.package_path):
+        raise ValueError("import path not allowed")
+    out = await service.backend_raw("import_anki_package", body)
+    await _emit_import_changes(service, out)
+    return out
+
+
+CUSTOM["getCsvMetadata"] = get_csv_metadata
+CUSTOM["importCsv"] = import_csv
+CUSTOM["importAnkiPackage"] = import_anki_package
+CUSTOM["importDone"] = _noop
