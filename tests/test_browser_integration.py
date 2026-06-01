@@ -48,10 +48,15 @@ def test_browse_search_and_open(live_server_browse):
         page.wait_for_function(
             "document.getElementById('results-body').children.length===1", timeout=6000)
         assert "dogword" in page.inner_text("#results-body")
-        # click the row -> detail pane shows the field value
+        # click the row -> D4 embeds the live editor iframe (/edit?nid=) in the detail pane,
+        # and the editor mounts + loads the clicked note inside the iframe
         page.click(".browser-row")
+        page.wait_for_selector("#detail iframe.editor-frame", timeout=6000)
         page.wait_for_function(
-            "document.getElementById('detail').textContent.includes('DOGWORD')", timeout=6000)
+            "() => { const f=document.querySelector('#detail iframe.editor-frame'); "
+            "return f && /[/]edit[?]nid=/.test(f.getAttribute('src') || '') && f.contentDocument "
+            "&& f.contentDocument.querySelector('.note-editor')!==null; }",
+            timeout=8000)
         browser.close()
 
 
