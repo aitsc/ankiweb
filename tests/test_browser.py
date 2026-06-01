@@ -17,6 +17,7 @@ def _seed(col):
         n = col.new_note(col.models.by_name("Basic")); n["Front"] = q; n["Back"] = q.upper()
         col.add_note(n, col.decks.id("Default"))
     col.tags.bulk_add(col.find_notes(""), "animals")
+    col.decks.id("Spanish")
 
 
 def _drain_call(ws, fn, tries=6):
@@ -77,3 +78,77 @@ def test_browse_invalid_search_does_not_crash(client):
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "search:deck:((("})
         args = _drain_call(ws, "ankiwebSetRows")
         assert args[1] == 0
+
+
+def _run(client, fn):
+    return client.portal.call(client.app.state.service.run, fn)
+
+
+def test_select_then_suspend(client):
+    hub = client.app.state.hub
+    cids = _run(client, lambda col: list(col.find_cards("")))
+    with client.websocket_connect("/ws?context=browser") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser",
+                      "arg": "select:" + ",".join(str(c) for c in cids)})
+        _drain_call(ws, "ankiwebSetDetail")
+        assert hub.ui_state.selected_card_ids == cids
+        assert len(hub.ui_state.selected_note_ids) == 2
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "suspend"})
+        _drain_call(ws, "ankiwebSetRows")
+    assert all(_run(client, lambda col, c=c: col.get_card(c).queue) == -1 for c in cids)
+
+
+def test_select_one_pushes_detail(client):
+    cid = _run(client, lambda col: list(col.find_cards("dog"))[0])
+    with client.websocket_connect("/ws?context=browser") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
+        detail = _drain_call(ws, "ankiwebSetDetail")[0]
+        assert "DOG" in detail
+
+
+def test_delete_removes_notes(client):
+    cid = _run(client, lambda col: list(col.find_cards("dog"))[0])
+    before = _run(client, lambda col: len(col.find_notes("")))
+    with client.websocket_connect("/ws?context=browser") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
+        _drain_call(ws, "ankiwebSetDetail")
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "delete"})
+        _drain_call(ws, "ankiwebSetRows")
+    assert _run(client, lambda col: len(col.find_notes(""))) == before - 1
+
+
+def test_changedeck_moves_card(client):
+    cid = _run(client, lambda col: list(col.find_cards("dog"))[0])
+    with client.websocket_connect("/ws?context=browser") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
+        _drain_call(ws, "ankiwebSetDetail")
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "changedeck:Spanish"})
+        _drain_call(ws, "ankiwebSetRows")
+    did = _run(client, lambda col: col.get_card(cid).did)
+    assert did == _run(client, lambda col: col.decks.id("Spanish"))
+
+
+def test_add_and_remove_tag(client):
+    cid = _run(client, lambda col: list(col.find_cards("dog"))[0])
+    nid = _run(client, lambda col: col.get_card(cid).nid)
+    with client.websocket_connect("/ws?context=browser") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
+        _drain_call(ws, "ankiwebSetDetail")
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "addtag:marked"})
+        _drain_call(ws, "ankiwebSetRows")
+    assert "marked" in _run(client, lambda col: col.get_note(nid).tags)
+    with client.websocket_connect("/ws?context=browser") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
+        _drain_call(ws, "ankiwebSetDetail")
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "removetag:marked"})
+        _drain_call(ws, "ankiwebSetRows")
+    assert "marked" not in _run(client, lambda col: col.get_note(nid).tags)
+
+
+def test_setdue_runs(client):
+    cid = _run(client, lambda col: list(col.find_cards("dog"))[0])
+    with client.websocket_connect("/ws?context=browser") as ws:
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
+        _drain_call(ws, "ankiwebSetDetail")
+        ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "setdue:0"})
+        _drain_call(ws, "ankiwebSetRows")

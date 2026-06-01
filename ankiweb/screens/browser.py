@@ -22,6 +22,7 @@ _STYLE = (
     ".browser-row{cursor:pointer}.browser-row:hover{background:#eef}"
     "#detail{width:280px;padding:6px;border-left:1px solid #ccc}"
     "#detail .fldname{font-weight:bold;color:#888;font-size:11px;margin-top:6px}"
+    "#results tr.selected{background:#cde}"
     "</style>"
 )
 
@@ -47,7 +48,17 @@ def render_browser_html(col) -> str:
         "<div id='browser-top'>"
         "<input id='search' type='text' autofocus placeholder='Search…' "
         "onkeydown=\"if(event.key==='Enter'){window.pycmd('search:'+this.value);}\">"
-        "<span id='browser-status'></span></div>"
+        "<span id='browser-status'></span>"
+        "<div id='browser-actions'>"
+        "<button onclick=\"ankiwebAct('suspend')\">Suspend</button>"
+        "<button onclick=\"ankiwebAct('unsuspend')\">Unsuspend</button>"
+        "<button onclick=\"ankiwebAct('forget')\">Forget</button>"
+        "<button onclick=\"ankiwebActP('setdue','Due in days (e.g. 0, 3, 1-7):')\">Set Due</button>"
+        "<button onclick=\"ankiwebActP('changedeck','Move to deck:')\">Change Deck</button>"
+        "<button onclick=\"ankiwebActP('addtag','Add tag:')\">Add Tag</button>"
+        "<button onclick=\"ankiwebActP('removetag','Remove tag:')\">Remove Tag</button>"
+        "<button onclick=\"if(confirm('Delete selected notes?'))ankiwebAct('delete')\">Delete</button>"
+        "</div></div>"
         "<div id='browser-main'>"
         f"<div id='sidebar'>{_sidebar_html(col)}</div>"
         "<div id='results-wrap'><table id='results'>"
@@ -57,12 +68,32 @@ def render_browser_html(col) -> str:
         "</div></div>"
         "<script>(function(){"
         "var b=window.__ankiwebBridge;"
+        "var _sel=[],_anchor=null;"
+        "function _rows(){return Array.prototype.slice.call("
+        "document.querySelectorAll('#results-body tr[data-cid]'));}"
+        "function _hl(){_rows().forEach(function(tr){"
+        "tr.classList.toggle('selected',_sel.indexOf(tr.dataset.cid)>=0);});}"
+        "function _selChanged(){window.pycmd('select:'+_sel.join(','));_hl();}"
+        "function _click(tr,e){var cid=tr.dataset.cid,rs=_rows();"
+        "if(e.shiftKey&&_anchor!==null){"
+        "var i=rs.findIndex(function(r){return r.dataset.cid===_anchor;}),"
+        "j=rs.findIndex(function(r){return r.dataset.cid===cid;});"
+        "if(i>=0&&j>=0){var lo=Math.min(i,j),hi=Math.max(i,j);"
+        "_sel=rs.slice(lo,hi+1).map(function(r){return r.dataset.cid;});}}"
+        "else if(e.ctrlKey||e.metaKey){var k=_sel.indexOf(cid);"
+        "if(k>=0)_sel.splice(k,1);else _sel.push(cid);_anchor=cid;}"
+        "else{_sel=[cid];_anchor=cid;}_selChanged();}"
+        "window.ankiwebAct=function(v){window.pycmd(v);};"
+        "window.ankiwebActP=function(v,m){var x=prompt(m);"
+        "if(x!==null&&x!=='')window.pycmd(v+':'+x);};"
         "b.registerCalls({"
-        "ankiwebSetRows:function(h,n){"
-        "document.getElementById('results-body').innerHTML=String(h);"
-        "document.getElementById('browser-status').textContent=(n||0)+' cards';},"
+        "ankiwebSetRows:function(h,n){document.getElementById('results-body').innerHTML=String(h);"
+        "document.getElementById('browser-status').textContent=(n||0)+' cards';"
+        "_sel=[];_anchor=null;},"
         "ankiwebSetDetail:function(h){document.getElementById('detail').innerHTML=String(h);}"
         "});"
+        "document.getElementById('results-body').addEventListener('click',function(e){"
+        "var tr=e.target.closest('tr');if(tr&&tr.dataset.cid){_click(tr,e);}});"
         "window.addEventListener('load',function(){window.pycmd('search:');});"
         "})();</script>"
     )
@@ -88,7 +119,7 @@ def _rows_html(rows) -> str:
     for cid, sort, deck, due in rows:
         text = html.escape(_TAG_STRIP.sub("", sort))[:200]
         out.append(
-            f"<tr class='browser-row' onclick=\"window.pycmd('open:{cid}')\">"
+            f"<tr class='browser-row' data-cid='{cid}'>"
             f"<td>{text}</td><td>{html.escape(deck)}</td><td>{due}</td></tr>")
     return "".join(out)
 
@@ -125,6 +156,21 @@ def make_browser_handler(service, hub):
         hub.ui_state.matched_card_ids = cids
         await hub.push_call("browser", "ankiwebSetRows", [rows_html, len(cids)])
 
+    async def _reload():
+        await _do_search(hub.ui_state.last_browse_query or "")
+        await hub.push_call("browser", "ankiwebSetDetail", [""])
+
+    def _nids(col, cids):
+        out = []
+        for c in cids:
+            try:
+                nid = col.get_card(c).nid
+            except Exception:
+                continue
+            if nid not in out:
+                out.append(nid)
+        return out
+
     async def handler(arg: str):
         cmd, _, rest = arg.partition(":")
         if cmd == "search":
@@ -134,15 +180,56 @@ def make_browser_handler(service, hub):
             await _do_search(f'deck:"{name}"')
         elif cmd == "searchtag":
             await _do_search(f'tag:"{rest}"')
-        elif cmd == "open":
-            cid = int(rest)
+        elif cmd in ("select", "open"):
+            cids = [int(c) for c in rest.split(",") if c] if cmd == "select" else [int(rest)]
 
-            def fetch(col):
-                return _detail_html(col, cid), col.get_card(cid).nid
-            detail, nid = await service.run(fetch)
-            hub.ui_state.selected_card_ids = [cid]
-            hub.ui_state.selected_note_ids = [nid]
+            def fn(col):
+                detail = _detail_html(col, cids[0]) if len(cids) == 1 else ""
+                return _nids(col, cids), detail
+            nids, detail = await service.run(fn)
+            hub.ui_state.selected_card_ids = cids
+            hub.ui_state.selected_note_ids = nids
             await hub.push_call("browser", "ankiwebSetDetail", [detail])
+        elif cmd in ("suspend", "unsuspend", "forget", "delete"):
+            cids = list(hub.ui_state.selected_card_ids or [])
+            if cids:
+                if cmd == "suspend":
+                    await service.run_op(lambda col: col.sched.suspend_cards(cids),
+                                         initiator="browser")
+                elif cmd == "unsuspend":
+                    await service.run_op(lambda col: col.sched.unsuspend_cards(cids),
+                                         initiator="browser")
+                elif cmd == "forget":
+                    await service.run_op(lambda col: col.sched.schedule_cards_as_new(cids),
+                                         initiator="browser")
+                else:
+                    await service.run_op(lambda col: col.remove_notes(_nids(col, cids)),
+                                         initiator="browser")
+                hub.ui_state.selected_card_ids = []
+                hub.ui_state.selected_note_ids = []
+                await _reload()
+        elif cmd == "setdue":
+            cids = list(hub.ui_state.selected_card_ids or [])
+            if cids and rest:
+                await service.run_op(lambda col: col.sched.set_due_date(cids, rest),
+                                     initiator="browser")
+                await _reload()
+        elif cmd == "changedeck":
+            cids = list(hub.ui_state.selected_card_ids or [])
+            if cids and rest:
+                await service.run_op(lambda col: col.set_deck(cids, col.decks.id(rest)),
+                                     initiator="browser")
+                await _reload()
+        elif cmd in ("addtag", "removetag"):
+            cids = list(hub.ui_state.selected_card_ids or [])
+            if cids and rest:
+                def tag(col):
+                    nids = _nids(col, cids)
+                    if cmd == "addtag":
+                        return col.tags.bulk_add(nids, rest)
+                    return col.tags.bulk_remove(nids, rest)
+                await service.run_op(tag, initiator="browser")
+                await _reload()
         return None
 
     return handler
