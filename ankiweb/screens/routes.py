@@ -167,6 +167,21 @@ def build_screen_router(get_service) -> APIRouter:
         return FileResponse(out, media_type=media, filename=filename,
                             background=BackgroundTask(os.remove, out))
 
+    @router.post("/image-occlusion/upload")
+    async def image_occlusion_upload(file: UploadFile):
+        from fastapi.responses import JSONResponse
+        from ankiweb import import_tmp
+        service = get_service()
+        import_tmp.io_gc(service.settings)
+        name = (file.filename or "").lower()
+        ext = "." + name.rsplit(".", 1)[-1] if "." in name else ""
+        if ext not in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".avif"):
+            return JSONResponse({"error": f"unsupported image type: {ext or '(none)'}"}, status_code=400)
+        dest = import_tmp.io_allocate(service.settings, ext)
+        dest.write_bytes(await file.read())
+        await service.run(lambda col: col.add_image_occlusion_notetype())  # idempotent ensure
+        return {"path": str(dest)}
+
     @router.post("/import/upload")
     async def import_upload(file: UploadFile):
         from fastapi.responses import JSONResponse

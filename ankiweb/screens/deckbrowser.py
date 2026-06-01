@@ -51,6 +51,7 @@ def render_deckbrowser_html(col) -> str:
               " <button onclick='pycmd(\"createfiltered\")'>Create Filtered Deck</button>"
               " <button onclick='ankiwebImportFile()'>Import</button>"
               " <a href='/export'>Export</a>"
+              " <button onclick='ankiwebImageOcclusion()'>Image Occlusion</button>"
               " <a href='/graphs'>Stats</a>")
     return f"<center>{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
 

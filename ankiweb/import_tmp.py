@@ -32,3 +32,24 @@ def gc(settings, ttl_seconds: int = 3600) -> None:
                 f.unlink()
         except OSError:
             pass
+
+
+def io_dir(settings) -> Path:
+    d = dir(settings) / "io"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def io_allocate(settings, ext: str) -> Path:
+    return io_dir(settings) / (secrets.token_hex(8) + ext)
+
+
+def io_gc(settings, ttl_seconds: int = 86400) -> None:
+    base = io_dir(settings)
+    now = time.time()
+    for f in base.iterdir():
+        try:
+            if f.is_file() and now - f.stat().st_mtime > ttl_seconds:
+                f.unlink()
+        except OSError:
+            pass

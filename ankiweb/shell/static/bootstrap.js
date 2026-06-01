@@ -100,6 +100,25 @@
     };
     input.click();
   };
+  window.ankiwebImageOcclusion = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.onchange = async () => {
+      const f = input.files && input.files[0];
+      if (!f) return;
+      const fd = new FormData();
+      fd.append("file", f);
+      const resp = await fetch("/image-occlusion/upload", { method: "POST", body: fd });
+      if (!resp.ok) {
+        window.alert("Image occlusion upload failed: " + await resp.text());
+        return;
+      }
+      const { path } = await resp.json();
+      window.location.href = "/image-occlusion/" + encodeURIComponent(path);
+    };
+    input.click();
+  };
   window.addEventListener("anki-opchanges", (e) => {
     const detail = e.detail;
     const flags = detail.flags || {};

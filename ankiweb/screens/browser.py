@@ -186,11 +186,22 @@ def make_browser_handler(service, hub):
             await _do_search(hub.ui_state.last_browse_query or "")
         elif cmd in ("select", "open"):
             cids = [int(c) for c in rest.split(",") if c] if cmd == "select" else [int(rest)]
-            nids = await service.run(lambda col: _nids(col, cids))
+
+            def _resolve(col):
+                ns = _nids(col, cids)
+                is_io = bool(
+                    len(cids) == 1 and ns
+                    and col.models.get(col.get_note(ns[0]).mid).get("originalStockKind") == 6)
+                return ns, is_io
+
+            nids, is_io = await service.run(_resolve)
             hub.ui_state.selected_card_ids = cids
             hub.ui_state.selected_note_ids = nids
-            detail = (f"<iframe class='editor-frame' src='/edit?nid={nids[0]}'></iframe>"
-                      if len(cids) == 1 and nids else "")
+            if len(cids) == 1 and nids:
+                src = f"/image-occlusion/{nids[0]}" if is_io else f"/edit?nid={nids[0]}"
+                detail = f"<iframe class='editor-frame' src='{src}'></iframe>"
+            else:
+                detail = ""
             await hub.push_call("browser", "ankiwebSetDetail", [detail])
         elif cmd in ("suspend", "unsuspend", "forget", "delete"):
             cids = list(hub.ui_state.selected_card_ids or [])
