@@ -14,3 +14,6 @@ ankiweb/web_assets/
 ankiweb/shell/static/
 node_modules/
 *.anki2
+
+# E6a import upload fallback temp dir (only hit when import_tmp_dir is unset)
+ankiweb/_import_tmp/

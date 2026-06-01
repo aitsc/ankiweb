@@ -8,7 +8,9 @@ from ankiweb.app import create_app
 
 @pytest.fixture
 def client(tmp_path: Path):
-    with TestClient(create_app(Settings(collection_path=tmp_path / "c.anki2"))) as c:
+    settings = Settings(collection_path=tmp_path / "c.anki2",
+                        import_tmp_dir=tmp_path / "import-tmp")
+    with TestClient(create_app(settings)) as c:
         yield c
 
 
