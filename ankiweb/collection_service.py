@@ -43,6 +43,15 @@ class CollectionService:
         loop = asyncio.get_running_loop()
         self._col = await loop.run_in_executor(self._executor, _open)
 
+    async def reopen(self) -> None:
+        """Re-open the collection on the worker WITHOUT shutting it down — for ops
+        that close it (export_collection_package). Unlike close(), keeps the executor."""
+        path = self._settings.collection_path
+        loop = asyncio.get_event_loop()
+        async with self._lock:
+            self._col = await loop.run_in_executor(
+                self._executor, lambda: Collection(str(path), server=False))
+
     async def close(self) -> None:
         if self._col is None:
             return

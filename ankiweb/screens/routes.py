@@ -1,6 +1,9 @@
 from __future__ import annotations
-from fastapi import APIRouter, UploadFile
-from fastapi.responses import HTMLResponse
+import os
+import tempfile
+from fastapi import APIRouter, Form, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse
+from starlette.background import BackgroundTask
 
 _MIME_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
              "image/webp": ".webp", "image/svg+xml": ".svg", "image/bmp": ".bmp"}
@@ -13,6 +16,7 @@ from ankiweb.screens.editor import editor_page_body, make_editor_handler
 from ankiweb.screens.add import render_add_html, make_add_handler
 from ankiweb.screens.custom_study import render_custom_study_html, make_custom_study_handler
 from ankiweb.screens.filtered_deck import render_filtered_deck_html, make_filtered_deck_handler
+from ankiweb.screens.export import render_export_html
 
 
 def build_screen_router(get_service) -> APIRouter:
@@ -88,6 +92,80 @@ def build_screen_router(get_service) -> APIRouter:
             base += _MIME_EXT.get(file.content_type or "", ".png")
         fname = await get_service().run(lambda col: col.media.write_data(base, data))
         return {"filename": fname}
+
+    @router.get("/export", response_class=HTMLResponse)
+    async def export_page():
+        service = get_service()
+        body = await service.run(render_export_html)
+        return HTMLResponse(render_page("export", body))
+
+    @router.post("/export")
+    async def export_post(
+        target: str = Form("all"),
+        fmt: str = Form("apkg"),
+        with_scheduling: bool = Form(False),
+        with_media: bool = Form(False),
+        with_deck_configs: bool = Form(False),
+        legacy: bool = Form(False),
+        with_html: bool = Form(False),
+        with_tags: bool = Form(False),
+        with_deck: bool = Form(False),
+        with_notetype: bool = Form(False),
+        with_guid: bool = Form(False),
+    ):
+        import anki.import_export_pb2 as ie
+        service = get_service()
+
+        def make_limit():
+            lim = ie.ExportLimit()
+            if target == "all":
+                lim.whole_collection.SetInParent()
+            else:
+                lim.deck_id = int(target)
+            return lim
+
+        suffix = {"apkg": ".apkg", "colpkg": ".colpkg",
+                  "notes_csv": ".csv", "cards_csv": ".csv"}.get(fmt, ".apkg")
+        fd, out = tempfile.mkstemp(suffix=suffix)
+        os.close(fd)
+        try:
+            if fmt == "apkg":
+                opts = ie.ExportAnkiPackageOptions(
+                    with_scheduling=with_scheduling, with_media=with_media,
+                    with_deck_configs=with_deck_configs, legacy=legacy)
+                lim = make_limit()
+                await service.run(lambda col: col.export_anki_package(
+                    out_path=out, options=opts, limit=lim))
+                filename, media = "export.apkg", "application/octet-stream"
+            elif fmt == "colpkg":
+                await service.run(lambda col: col.export_collection_package(
+                    out, with_media, legacy))
+                await service.reopen()  # export_collection_package closed the collection
+                filename, media = "collection.colpkg", "application/octet-stream"
+            elif fmt == "notes_csv":
+                lim = make_limit()
+                await service.run(lambda col: col.export_note_csv(
+                    out_path=out, limit=lim, with_html=with_html, with_tags=with_tags,
+                    with_deck=with_deck, with_notetype=with_notetype, with_guid=with_guid))
+                filename, media = "notes.csv", "text/csv"
+            elif fmt == "cards_csv":
+                lim = make_limit()
+                await service.run(lambda col: col.export_card_csv(
+                    out_path=out, limit=lim, with_html=with_html))
+                filename, media = "cards.csv", "text/csv"
+            else:
+                os.remove(out)
+                return HTMLResponse("unknown export format", status_code=400)
+        except Exception as exc:
+            try:
+                os.remove(out)
+            except OSError:
+                pass
+            body = await service.run(render_export_html)
+            return HTMLResponse(render_page(
+                "export", f"<div style='color:#c00'>Export failed: {exc}</div>" + body))
+        return FileResponse(out, media_type=media, filename=filename,
+                            background=BackgroundTask(os.remove, out))
 
     @router.post("/import/upload")
     async def import_upload(file: UploadFile):
