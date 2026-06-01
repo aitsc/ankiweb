@@ -83,7 +83,8 @@ def make_deckbrowser_handler(service, hub):
                     initiator="deckbrowser",
                 )
                 await hub.push_call("deckbrowser", "ankiwebReload", [])
-        # 'opts' (gear menu) is deferred to a later plan; ignore for now.
+        elif cmd == "opts":
+            await hub.push_call("deckbrowser", "ankiwebNavigate", ["/deck-options/" + rest])
         return None
 
     return handler

@@ -10,6 +10,9 @@ PASSTHROUGH: set[str] = {
     "card_stats", "get_review_logs", "graphs", "get_graph_preferences",
     "set_graph_preferences", "complete_tag", "congrats_info",
     "get_deck_configs_for_update",
+    "get_ignored_before_count", "compute_fsrs_params", "evaluate_params_legacy",
+    "compute_optimal_retention", "simulate_fsrs_review", "simulate_fsrs_workload",
+    "get_retention_workload", "set_wants_abort",
 }
 
 _S1 = re.compile(r"(.)([A-Z][a-z]+)")
