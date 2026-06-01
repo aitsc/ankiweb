@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn>=0.30",
     "websockets>=12",  # uvicorn needs a WS library for real /ws connections (the bridge)
     "httpx>=0.27",
+    "python-multipart>=0.0.9",  # FastAPI UploadFile (the /upload_media paste-image endpoint)
 ]
 
 [project.optional-dependencies]
