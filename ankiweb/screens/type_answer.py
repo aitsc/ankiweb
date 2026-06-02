@@ -1,6 +1,7 @@
 from __future__ import annotations
 import html as _html
 import re
+from ankiweb.i18n import tr
 
 _TYPE_RE = re.compile(r"\[\[type:(.+?)\]\]")
 
@@ -42,8 +43,9 @@ def type_answer_question_filter(col, card, session, html: str) -> str:
     note = card.note()
     model = note.note_type()
     if field not in note:   # unknown field → warn, no input (Qt shows a warning); type_correct stays None
-        return _TYPE_RE.sub(
-            "<center><b>Type-answer field not found: " + _html.escape(field) + "</b></center>", html)
+        # studying_type_answer_unknown_field embeds the field name (val=) + bidi isolates.
+        warn = _html.escape(tr.studying_type_answer_unknown_field(val=field))
+        return _TYPE_RE.sub(lambda _m: f"<center><b>{warn}</b></center>", html)
     if is_cloze:
         expected = col.extract_cloze_for_typing(note[field], card.ord + 1)
     else:

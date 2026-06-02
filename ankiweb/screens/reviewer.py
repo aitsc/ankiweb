@@ -2,6 +2,7 @@ from __future__ import annotations
 import html as _html
 from dataclasses import dataclass
 from anki.sound import SoundOrVideoTag, AV_REF_RE
+from ankiweb.i18n import tr
 
 
 def render_av_buttons(text: str) -> str:
@@ -87,18 +88,20 @@ def answer_current(col, session: ReviewerSession, ease: int):
     return col.sched.answer_card(answer)
 
 
-_EASE_NAMES = ("Again", "Hard", "Good", "Easy")
+def _ease_names() -> tuple:
+    """Per-request so the labels follow the active language."""
+    return (tr.studying_again(), tr.studying_hard(), tr.studying_good(), tr.studying_easy())
 
 
 def show_answer_bar() -> str:
     return ("<button id='ansbut' class='ansbut' "
-            "onclick=\"ankiwebShowAnswer()\">Show Answer</button>")
+            f"onclick=\"ankiwebShowAnswer()\">{tr.studying_show_answer()}</button>")
 
 
 def ease_buttons_bar(labels) -> str:
     """labels: 4 interval strings in order [Again, Hard, Good, Easy]."""
     cells = []
-    for i, name in enumerate(_EASE_NAMES, start=1):
+    for i, name in enumerate(_ease_names(), start=1):
         label = _html.escape(labels[i - 1]) if i - 1 < len(labels) else ""
         cells.append(
             f"<button class='ease' data-ease='{i}' onclick=\"pycmd('ease{i}')\">"
