@@ -78,6 +78,8 @@ All settings have safe localhost defaults; override via environment variables:
 | `ANKIWEB_AC_PORT` | `8765` | AnkiConnect port (overrides `ankiconnect.json`). |
 | `ANKIWEB_AC_KEY` | *(none)* | AnkiConnect `apiKey` (overrides `ankiconnect.json`). |
 | `ANKIWEB_IMPORT_TMP_DIR` | `<collection dir>/import-tmp` | Where uploaded import/image files are staged before the backend reads them. |
+| `ANKIWEB_LANG` | *(empty → English)* | UI language, an Anki locale code (e.g. `zh-CN`, `ja`, `de`, `fr`). Chosen at startup — there is no in-app switcher; changing it means changing this var and restarting. See **Language** below. |
+| `ANKIWEB_SOURCE_URL` | *(empty)* | AGPL §13 Corresponding-Source location for this deployment, shown on the `/about` page (only relevant if you run it as a public network service). |
 
 **`ankiconnect.json`** (optional) lives next to the collection file and uses AnkiConnect's
 own keys; environment variables override it:
@@ -100,6 +102,20 @@ ANKIWEB_HOST=0.0.0.0 ANKIWEB_ALLOWED_HOSTS=192.168.1.50:8000 \
 `ANKIWEB_ALLOWED_HOSTS` accepts the value with or without a port (`192.168.1.50` matches
 any port), multiple comma-separated hosts, or `*` to turn the check off (only on a trusted
 network). It covers both HTTP and the WebSocket bridge.
+
+### Language
+
+Set `ANKIWEB_LANG` to any Anki locale code to run the whole UI in that language — both the
+reused Anki frontend (graphs / deck options / reviewer / editor …) and ankiweb's own
+hand-written screens (deck browser, browser, Add, Preferences, etc.):
+
+```bash
+ANKIWEB_LANG=zh-CN conda run -n ankiweb python -m ankiweb
+```
+
+The language is fixed at startup (it's applied before the collection is opened); there is
+no in-app language switcher, so to change it you set `ANKIWEB_LANG` and restart. Empty or an
+unknown code falls back to English. Accepts both `zh-CN` and `zh_CN` forms.
 
 ### Night mode
 
