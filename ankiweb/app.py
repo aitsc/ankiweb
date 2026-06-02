@@ -5,16 +5,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import PlainTextResponse
 
-from ankiweb.config import Settings
+from ankiweb.config import Settings, host_allowed
 from ankiweb.collection_service import CollectionService
 from ankiweb.bridge.hub import BridgeHub
 from ankiweb.assets import build_router as build_assets_router, build_media_router, build_sveltekit_router
 from ankiweb.anki_rpc import build_router as build_rpc_router
 from ankiweb.bridge.ws import build_router as build_ws_router
 from ankiweb.screens.routes import build_screen_router, register_screen_handlers
-
-_ALLOWED_HOST_PREFIXES = ("127.0.0.1:", "localhost:", "[::1]:")
-_ALLOWED_HOSTS = ("127.0.0.1", "localhost", "testserver")
 
 
 def create_app(settings: Settings | None = None, service: CollectionService | None = None,
@@ -44,7 +41,7 @@ def create_app(settings: Settings | None = None, service: CollectionService | No
 
     async def host_guard(request, call_next):
         host = request.headers.get("host", "")
-        if not (host.startswith(_ALLOWED_HOST_PREFIXES) or host in _ALLOWED_HOSTS):
+        if not host_allowed(host, settings.allowed_hosts):
             return PlainTextResponse("forbidden host", status_code=403)
         return await call_next(request)
 
@@ -61,7 +58,7 @@ def create_app(settings: Settings | None = None, service: CollectionService | No
 
     app.include_router(build_assets_router(settings.assets_dir))       # GET  /_anki/{path}
     app.include_router(build_rpc_router(lambda: app.state.service, lambda: app.state.hub))    # POST /_anki/{method}
-    app.include_router(build_ws_router(lambda: app.state.hub))         # WS   /ws
+    app.include_router(build_ws_router(lambda: app.state.hub, settings.allowed_hosts))  # WS /ws
     app.include_router(build_screen_router(lambda: app.state.service))  # GET / and /deckbrowser
     app.include_router(build_sveltekit_router(settings.assets_dir))     # GET  /graphs, /_app/{path}, /favicon.ico
     app.include_router(build_media_router(lambda: app.state.service))  # GET  /{path} — LAST
