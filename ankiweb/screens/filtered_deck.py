@@ -1,6 +1,7 @@
 from __future__ import annotations
 import html
 import json
+from ankiweb.i18n import tr
 
 
 def render_filtered_deck_html(col, deck_id: int) -> str:
@@ -31,35 +32,43 @@ def render_filtered_deck_html(col, deck_id: int) -> str:
     second_checked = "checked" if has2 else ""
     second_disp = "" if has2 else "display:none;"
     preview_disp = "display:none;" if cfg.reschedule else ""
-    oklabel = "Rebuild" if is_edit else "Build"
+    oklabel = tr.actions_rebuild() if is_edit else tr.decks_build()
+    # "Filtered Deck" has no clean Anki key → keep as a keyless English suffix; only the
+    # verb is translated (Edit) / kept English (Create, to preserve byte-identical default).
+    heading = f"{tr.studying_edit() if is_edit else 'Create'} Filtered Deck"
+    L_name = html.escape(tr.deck_config_name_prompt())
+    L_filter = html.escape(tr.actions_filter())
+    L_search = html.escape(tr.actions_search())
+    L_limit = html.escape(tr.decks_limit_to())
+    L_order = html.escape(tr.scheduling_order())
 
     body = f"""
 <div class='filtered-deck'>
-  <h3>{'Edit' if is_edit else 'Create'} Filtered Deck</h3>
+  <h3>{heading}</h3>
   <form id="fd" onsubmit='return false;'>
     <input type='hidden' id="did" value='{g.id}'>
-    <div><label>Name <input type='text' id="name" value="{name}" size='30'></label></div>
-    <fieldset><legend>Filter</legend>
-      <div><label>Search <input type='text' id="search1" value="{search1}" size='40'></label></div>
-      <div><label>Limit <input type='number' id="limit1" value='{limit1}' min='1' style='width:6em;'></label>
-           &nbsp; Order {order_select('order1', order1)}</div>
+    <div><label>{L_name} <input type='text' id="name" value="{name}" size='30'></label></div>
+    <fieldset><legend>{L_filter}</legend>
+      <div><label>{L_search} <input type='text' id="search1" value="{search1}" size='40'></label></div>
+      <div><label>{L_limit} <input type='number' id="limit1" value='{limit1}' min='1' style='width:6em;'></label>
+           &nbsp; {L_order} {order_select('order1', order1)}</div>
     </fieldset>
-    <div><label><input type='checkbox' id="second" {second_checked} onchange='onSecond()'> Enable second filter</label></div>
-    <fieldset id="filter2" style='{second_disp}'><legend>Second filter</legend>
-      <div><label>Search <input type='text' id="search2" value="{search2}" size='40'></label></div>
-      <div><label>Limit <input type='number' id="limit2" value='{limit2}' min='1' style='width:6em;'></label>
-           &nbsp; Order {order_select('order2', order2)}</div>
+    <div><label><input type='checkbox' id="second" {second_checked} onchange='onSecond()'> {html.escape(tr.decks_enable_second_filter())}</label></div>
+    <fieldset id="filter2" style='{second_disp}'><legend>{html.escape(tr.decks_filter_2())}</legend>
+      <div><label>{L_search} <input type='text' id="search2" value="{search2}" size='40'></label></div>
+      <div><label>{L_limit} <input type='number' id="limit2" value='{limit2}' min='1' style='width:6em;'></label>
+           &nbsp; {L_order} {order_select('order2', order2)}</div>
     </fieldset>
-    <div style='margin-top:8px;'><label><input type='checkbox' id="resched" {resched} onchange='onResched()'> Reschedule cards based on my answers</label></div>
+    <div style='margin-top:8px;'><label><input type='checkbox' id="resched" {resched} onchange='onResched()'> {html.escape(tr.decks_reschedule_cards_based_on_my_answers())}</label></div>
     <fieldset id="previewblock" style='{preview_disp}'><legend>Preview delays (seconds)</legend>
-      <label>Again <input type='number' id="preview_again" value='{cfg.preview_again_secs}' min='0' style='width:6em;'></label>
-      <label>Hard <input type='number' id="preview_hard" value='{cfg.preview_hard_secs}' min='0' style='width:6em;'></label>
-      <label>Good <input type='number' id="preview_good" value='{cfg.preview_good_secs}' min='0' style='width:6em;'></label>
+      <label>{html.escape(tr.studying_again())} <input type='number' id="preview_again" value='{cfg.preview_again_secs}' min='0' style='width:6em;'></label>
+      <label>{html.escape(tr.studying_hard())} <input type='number' id="preview_hard" value='{cfg.preview_hard_secs}' min='0' style='width:6em;'></label>
+      <label>{html.escape(tr.studying_good())} <input type='number' id="preview_good" value='{cfg.preview_good_secs}' min='0' style='width:6em;'></label>
     </fieldset>
-    <div style='margin-top:8px;'><label><input type='checkbox' id="allow_empty" {allow_empty}> Create even if empty</label></div>
+    <div style='margin-top:8px;'><label><input type='checkbox' id="allow_empty" {allow_empty}> {html.escape(tr.decks_create_even_if_empty())}</label></div>
     <div style='margin-top:10px;'>
-      <button type='button' id="go" onclick='submitFd()'>{oklabel}</button>
-      <button type='button' onclick="pycmd('cancel')">Cancel</button>
+      <button type='button' id="go" onclick='submitFd()'>{html.escape(oklabel)}</button>
+      <button type='button' onclick="pycmd('cancel')">{html.escape(tr.actions_cancel())}</button>
     </div>
     <div id="err" style='color:#c00;margin-top:8px;'></div>
   </form>
