@@ -132,9 +132,14 @@
       location.reload();
     }
   });
-  if (location.hash.includes("night")) {
+  if (location.hash.includes("night") || localStorage.getItem("ankiweb-night") === "1") {
     document.documentElement.classList.add("night-mode");
     document.documentElement.setAttribute("data-bs-theme", "dark");
   }
+  window.ankiwebToggleNight = () => {
+    const on = localStorage.getItem("ankiweb-night") === "1";
+    localStorage.setItem("ankiweb-night", on ? "0" : "1");
+    location.reload();
+  };
   window.addEventListener("load", () => bridge.ready());
 })();

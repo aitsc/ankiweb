@@ -52,7 +52,8 @@ def render_deckbrowser_html(col) -> str:
               " <button onclick='ankiwebImportFile()'>Import</button>"
               " <a href='/export'>Export</a>"
               " <button onclick='ankiwebImageOcclusion()'>Image Occlusion</button>"
-              " <a href='/graphs'>Stats</a>")
+              " <a href='/graphs'>Stats</a>"
+              " <button onclick='ankiwebToggleNight()' title='Toggle night mode'>🌙</button>")
     return f"<center>{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
 
 

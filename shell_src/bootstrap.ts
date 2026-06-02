@@ -76,10 +76,17 @@ window.addEventListener("anki-opchanges", (e: Event) => {
   }
 });
 
-// Night-mode hash convention.
-if (location.hash.includes("night")) {
+// Night-mode: the #night hash convention OR the persisted preference. Applied
+// synchronously in <head> (before <body>) so server-rendered screens don't flash.
+if (location.hash.includes("night") || localStorage.getItem("ankiweb-night") === "1") {
   document.documentElement.classList.add("night-mode");
   document.documentElement.setAttribute("data-bs-theme", "dark");
 }
+
+(window as any).ankiwebToggleNight = () => {
+  const on = localStorage.getItem("ankiweb-night") === "1";
+  localStorage.setItem("ankiweb-night", on ? "0" : "1");
+  location.reload();
+};
 
 window.addEventListener("load", () => bridge.ready());
