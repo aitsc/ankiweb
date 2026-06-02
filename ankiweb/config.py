@@ -35,6 +35,9 @@ class Settings:
     # AGPL §13 source offer: where this deployment's Corresponding Source lives. Shown on
     # the /about page + the toolbar "Source" link. Set ANKIWEB_SOURCE_URL when deploying.
     source_url: str = ""
+    # UI language chosen at startup (Anki locale code, e.g. "zh-CN", "ja"). Empty = English.
+    # Applied by CollectionService.open() via anki.lang.set_lang(); there is no in-UI switcher.
+    lang: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -47,4 +50,5 @@ class Settings:
             allowed_hosts=tuple(
                 h.strip() for h in os.environ.get("ANKIWEB_ALLOWED_HOSTS", "").split(",") if h.strip()),
             source_url=os.environ.get("ANKIWEB_SOURCE_URL", ""),
+            lang=os.environ.get("ANKIWEB_LANG", ""),
         )
