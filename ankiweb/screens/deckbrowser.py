@@ -54,7 +54,12 @@ def render_deckbrowser_html(col) -> str:
               " <button onclick='ankiwebImageOcclusion()'>Image Occlusion</button>"
               " <a href='/graphs'>Stats</a>"
               " <button onclick='ankiwebToggleNight()' title='Toggle night mode'>🌙</button>")
-    return f"<center>{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
+    # Top toolbar — Anki's main-window Add/Browse entry points (this app has no global
+    # toolbar, so the deck list carries them).
+    nav = ("<div class='top-nav'>"
+           "<a href='/add'>Add</a> &nbsp;&middot;&nbsp; <a href='/browse'>Browse</a>"
+           "</div>")
+    return f"<center>{nav}{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
 
 
 def make_deckbrowser_handler(service, hub):
