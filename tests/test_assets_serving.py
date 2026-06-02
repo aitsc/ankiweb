@@ -52,7 +52,13 @@ def test_vendored_image_has_long_cache(client):
         assert "max-age=31536000" in r.headers.get("cache-control", "")
 
 
-def test_js_not_pinned(client):
-    # js stays revalidate-able (changes on an anki re-vendor)
+def test_vendored_js_cached(client):
+    # the big vendored bundles (editor.js 3.5MB) must be cached so the Browser's per-card
+    # editor iframe doesn't re-download them on every card switch
     r = client.get("/_anki/js/reviewer.js")
-    assert r.headers.get("cache-control", "") == "max-age=0"
+    assert "max-age=86400" in r.headers.get("cache-control", "")
+
+
+def test_vendored_css_cached(client):
+    r = client.get("/_anki/reviewer.css")
+    assert "max-age=86400" in r.headers.get("cache-control", "")

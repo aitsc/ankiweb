@@ -88,11 +88,13 @@ def build_router(assets_dir: Path) -> APIRouter:
             # CHTML glyph fonts). Without a cache header the browser re-downloads them FULLY on
             # every card render -> slow card switches. They never change at runtime.
             headers["Cache-Control"] = "max-age=31536000"
-        elif rel.endswith(".css"):
-            headers["Cache-Control"] = "max-age=10"
-        elif rel.endswith(".js"):
-            # js can change on an anki version re-vendor -> revalidate via etag (304), don't pin
-            headers["Cache-Control"] = "max-age=0"
+        elif rel.endswith((".css", ".js")):
+            # Vendored frontend bundles (editor.js is 3.5 MB) are version-pinned. Caching them
+            # for a day means the Browser's per-card editor iframe (and the reviewer) reuse the
+            # cache instead of re-downloading megabytes on every card switch. (max-age=0 forced a
+            # revalidation that came back as a full 200 here, defeating the cache.) A re-vendor is
+            # picked up within a day, or immediately via a hard refresh.
+            headers["Cache-Control"] = "max-age=86400"
         return FileResponse(target, media_type=_mime(rel), headers=headers)
 
     return router
