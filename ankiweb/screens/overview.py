@@ -34,7 +34,22 @@ def make_overview_handler(service, hub):
             is_dyn = await service.run(lambda col: bool(col.decks.get(did).get("dyn")))
             path = (f"/filtered-deck/{did}") if is_dyn else (f"/deck-options/{did}")
             await hub.push_call("overview", "ankiwebNavigate", [path])
-        # 'description' deferred to later plans.
+        elif arg.startswith("setdesc:"):
+            import json
+            try:
+                p = json.loads(arg[len("setdesc:"):])
+            except Exception:
+                return None
+
+            def save_desc(col):
+                did = col.decks.get_current_id()
+                d = col.decks.get(did)
+                d["desc"] = p.get("desc", "")
+                d["md"] = bool(p.get("md", False))
+                return col.decks.update_dict(d)
+
+            await service.run_op(save_desc, initiator="overview")
+            await hub.push_call("overview", "ankiwebReload", [])
         return None
 
     return handler
@@ -79,10 +94,26 @@ def render_overview_html(col) -> str:
         bottom.append("<button onclick='pycmd(\"studymore\")'>Custom Study</button>")
     if col.sched.have_buried():
         bottom.append("<button onclick='pycmd(\"unbury\")'>Unbury</button>")
+    bottom.append("<button onclick=\"document.getElementById('descedit').style.display=''\">"
+                  "Edit Description</button>")
     bottom.append("<button onclick='pycmd(\"decks\")'>Decks</button>")
+
+    md_checked = "checked" if deck.get("md") else ""
+    descedit = (
+        "<div id='descedit' style='display:none;margin-top:10px;'>"
+        f"<textarea id='descbox' rows='4' cols='50'>{html.escape(raw)}</textarea><br>"
+        f"<label><input type='checkbox' id='descmd' {md_checked}> Render as markdown</label><br>"
+        "<button onclick='saveDesc()'>Save</button> "
+        "<button onclick=\"document.getElementById('descedit').style.display='none'\">Cancel</button>"
+        "</div>"
+        "<script>function saveDesc(){"
+        "var d=document.getElementById('descbox').value,"
+        "m=document.getElementById('descmd').checked;"
+        "pycmd('setdesc:'+JSON.stringify({desc:d,md:m}));}</script>"
+    )
 
     return (
         f"<center><h3>{name}</h3>{desc}{table}"
         f"<div class='studybtn'>{study}</div>"
-        f"<div class='bottom-buttons'>{''.join(bottom)}</div></center>"
+        f"<div class='bottom-buttons'>{''.join(bottom)}</div>{descedit}</center>"
     )
