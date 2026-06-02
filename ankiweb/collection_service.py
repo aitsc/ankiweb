@@ -25,6 +25,10 @@ class CollectionService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="anki")
+        # Auxiliary pool for thread-safe Rust backend calls that must run CONCURRENTLY
+        # with the main worker (FSRS compute/simulate + latest_progress polling +
+        # set_wants_abort) so progress is observable while a long compute runs.
+        self._aux_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="anki-aux")
         self._lock = asyncio.Lock()
         self._col: Collection | None = None
         self._subscribers: list = []
@@ -59,6 +63,7 @@ class CollectionService:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, lambda: col.close())
         await loop.run_in_executor(None, self._executor.shutdown)
+        await loop.run_in_executor(None, self._aux_executor.shutdown)
 
     async def run(self, fn: Callable[[Collection], T]) -> T:
         async with self._lock:
@@ -82,6 +87,21 @@ class CollectionService:
         def fn(col):
             return getattr(col._backend, f"{method}_raw")(data)
         return await self.run(fn)
+
+    async def backend_raw_concurrent(self, method: str, data: bytes) -> bytes:
+        """Call `col._backend.<method>_raw` OFF the serialized main worker, on the aux
+        pool, so it runs CONCURRENTLY with the main worker and with other aux calls.
+        ONLY for thread-safe Rust backend calls that don't mutate Python-side collection
+        state: FSRS compute/simulate (long, read-only), `latest_progress` (polled while
+        they run), and `set_wants_abort` (cancels them). The Rust backend serializes its
+        own collection access internally; `latest_progress` uses a separate lock, so it
+        returns live progress while a compute holds the collection lock."""
+        col = self._col
+        if col is None:
+            raise RuntimeError("collection not open")
+        fn = getattr(col._backend, f"{method}_raw")
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._aux_executor, lambda: fn(data))
 
     def subscribe(self, cb) -> None:
         """cb(changes, initiator) — called after a mutating op broadcasts changes."""

@@ -32,12 +32,15 @@ def test_get_deck_configs_for_update_passthrough(client):
 
 
 def test_passthrough_and_custom_registered():
-    from ankiweb.anki_rpc.passthrough import PASSTHROUGH
+    from ankiweb.anki_rpc.passthrough import PASSTHROUGH, CONCURRENT
     from ankiweb.anki_rpc.handlers import CUSTOM
-    for m in ("get_ignored_before_count", "compute_fsrs_params", "evaluate_params_legacy",
-              "compute_optimal_retention", "simulate_fsrs_review", "simulate_fsrs_workload",
-              "get_retention_workload", "set_wants_abort"):
-        assert m in PASSTHROUGH, m
+    assert "get_ignored_before_count" in PASSTHROUGH
+    # the long FSRS compute/simulate calls + set_wants_abort run on the concurrent path
+    # (off the main worker) so latest_progress stays pollable during a compute
+    for m in ("compute_fsrs_params", "evaluate_params_legacy", "compute_optimal_retention",
+              "simulate_fsrs_review", "simulate_fsrs_workload", "get_retention_workload",
+              "set_wants_abort"):
+        assert m in CONCURRENT, m
     for m in ("updateDeckConfigs", "deckOptionsReady", "deckOptionsRequireClose"):
         assert m in CUSTOM, m
 

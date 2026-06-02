@@ -5,16 +5,24 @@ import re
 # col._backend.<snake>_raw(body). Seeded from mediasrv exposed_backend_list
 # (mediasrv.py:659-701); extend per page as needed in later plans.
 PASSTHROUGH: set[str] = {
-    "latest_progress", "get_custom_colours", "get_deck_names", "i18n_resources",
+    "get_custom_colours", "get_deck_names", "i18n_resources",
     "get_field_names", "get_import_anki_package_presets",
     "get_note", "get_notetype_names", "get_change_notetype_info",
     "card_stats", "get_review_logs", "graphs", "get_graph_preferences",
     "set_graph_preferences", "complete_tag", "congrats_info",
     "get_deck_configs_for_update",
     "get_image_occlusion_note", "get_image_occlusion_fields",
-    "get_ignored_before_count", "compute_fsrs_params", "evaluate_params_legacy",
-    "compute_optimal_retention", "simulate_fsrs_review", "simulate_fsrs_workload",
-    "get_retention_workload", "set_wants_abort",
+    "get_ignored_before_count",
+}
+
+# Thread-safe Rust backend calls dispatched OFF the single main worker (via
+# service.backend_raw_concurrent) so they run concurrently: the long FSRS
+# compute/simulate calls, `latest_progress` (polled by the deck-options page WHILE a
+# compute runs → live progress), and `set_wants_abort` (cancels a running compute).
+CONCURRENT: set[str] = {
+    "latest_progress", "set_wants_abort",
+    "compute_fsrs_params", "evaluate_params_legacy", "compute_optimal_retention",
+    "simulate_fsrs_review", "simulate_fsrs_workload", "get_retention_workload",
 }
 
 _S1 = re.compile(r"(.)([A-Z][a-z]+)")

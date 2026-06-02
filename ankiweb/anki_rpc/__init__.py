@@ -1,7 +1,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import Response, PlainTextResponse
-from ankiweb.anki_rpc.passthrough import PASSTHROUGH, camel_to_snake
+from ankiweb.anki_rpc.passthrough import PASSTHROUGH, CONCURRENT, camel_to_snake
 
 BINARY = "application/binary"
 
@@ -23,6 +23,8 @@ def build_router(get_service, get_hub=None) -> APIRouter:
         try:
             if method in CUSTOM:
                 out = await CUSTOM[method](service, body, hub)
+            elif snake in CONCURRENT:
+                out = await service.backend_raw_concurrent(snake, body)
             elif snake in PASSTHROUGH:
                 out = await service.backend_raw(snake, body)
             else:
