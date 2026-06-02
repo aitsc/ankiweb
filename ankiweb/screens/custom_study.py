@@ -1,6 +1,7 @@
 from __future__ import annotations
 import html
 import json
+from ankiweb.i18n import tr
 
 
 def render_custom_study_html(col) -> str:
@@ -10,12 +11,12 @@ def render_custom_study_html(col) -> str:
     avail_rev = d.available_review + d.available_review_in_children
 
     radios = [
-        (1, "Increase today's new card limit"),
-        (2, "Increase today's review card limit"),
-        (3, "Review forgotten cards"),
-        (4, "Review ahead"),
-        (5, "Preview new cards"),
-        (6, "Study by card state or tag"),
+        (1, tr.custom_study_increase_todays_new_card_limit()),
+        (2, tr.custom_study_increase_todays_review_card_limit()),
+        (3, tr.custom_study_review_forgotten_cards()),
+        (4, tr.custom_study_review_ahead()),
+        (5, tr.custom_study_preview_new_cards()),
+        (6, tr.custom_study_study_by_card_state_or_tag()),
     ]
     radio_html = "".join(
         f'<div><label><input type="radio" name="r" value="{v}"'
@@ -23,9 +24,9 @@ def render_custom_study_html(col) -> str:
         for v, t in radios
     )
 
-    kinds = [(1, "New cards only"), (0, "Due cards only"),
-             (2, "All review cards in random order"),
-             (3, "All cards in random order (don't reschedule)")]
+    kinds = [(1, tr.custom_study_new_cards_only()), (0, tr.custom_study_due_cards_only()),
+             (2, tr.custom_study_all_review_cards_in_random_order()),
+             (3, tr.custom_study_all_cards_in_random_order_dont())]
     kind_opts = "".join(f"<option value='{k}'>{html.escape(t)}</option>" for k, t in kinds)
     tag_opts = "".join(
         f"<option value='{html.escape(t.name)}'>{html.escape(t.name)}</option>"
@@ -34,17 +35,17 @@ def render_custom_study_html(col) -> str:
 
     # per-radio config: [label, default, suffix, min]
     cfg = {
-        1: ["Increase today's new card limit by", d.extend_new or 0, "cards", -9999],
-        2: ["Increase today's review card limit by", d.extend_review or 0, "cards", -9999],
-        3: ["Review cards forgotten in the last", 1, "days", 1],
-        4: ["Review ahead by", 1, "days", 1],
-        5: ["Preview new cards added in the last", 1, "days", 1],
-        6: ["Select", 100, "cards from the deck", 1],
+        1: [tr.custom_study_increase_todays_new_card_limit_by(), d.extend_new or 0, tr.custom_study_cards(), -9999],
+        2: [tr.custom_study_increase_todays_review_limit_by(), d.extend_review or 0, tr.custom_study_cards(), -9999],
+        3: [tr.custom_study_review_cards_forgotten_in_last(), 1, tr.scheduling_days(), 1],
+        4: [tr.custom_study_review_ahead_by(), 1, tr.scheduling_days(), 1],
+        5: [tr.custom_study_preview_new_cards_added_in_the(), 1, tr.scheduling_days(), 1],
+        6: [tr.custom_study_select(), 100, tr.custom_study_cards_from_the_deck(), 1],
     }
 
     body = f"""
 <div class='custom-study'>
-  <h3>Custom Study</h3>
+  <h3>{html.escape(tr.actions_custom_study())}</h3>
   <div class='avail'>New available: {avail_new} &nbsp; Review available: {avail_rev}</div>
   <form id='cs' onsubmit='return false;'>
     {radio_html}
@@ -54,17 +55,17 @@ def render_custom_study_html(col) -> str:
       <span id='spinsuffix'></span>
     </div>
     <div id='cramblock' style='display:none;'>
-      <div>Card state:
+      <div>{html.escape(tr.browsing_sidebar_card_state())}
         <select id='cramkind'>{kind_opts}</select>
       </div>
-      <div style='margin-top:6px;'>Require one or more of these tags:<br>
+      <div style='margin-top:6px;'>{html.escape(tr.custom_study_require_one_or_more_of_these())}<br>
         <select id='inc' multiple size='4'>{tag_opts}</select></div>
-      <div style='margin-top:6px;'>Exclude tags:<br>
+      <div style='margin-top:6px;'>{html.escape(tr.custom_study_select_tags_to_exclude())}<br>
         <select id='exc' multiple size='4'>{tag_opts}</select></div>
     </div>
     <div style='margin-top:10px;'>
-      <button type='button' id='go' onclick='submitCs()'>OK</button>
-      <button type='button' onclick="pycmd('cancel')">Cancel</button>
+      <button type='button' id='go' onclick='submitCs()'>{html.escape(tr.custom_study_ok())}</button>
+      <button type='button' onclick="pycmd('cancel')">{html.escape(tr.actions_cancel())}</button>
     </div>
     <div id='err' style='color:#c00;margin-top:8px;'></div>
   </form>
