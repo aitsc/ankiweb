@@ -72,7 +72,8 @@ def editor_links_js() -> str:
         "else tag='[sound:'+fn+']';window.pasteHTML(tag,false,false);});};inp.click();}"
         "function _awCmd(c,cb){if(typeof c==='string'){"
         "if(c==='attach'){_awAttach();return;}"
-        "if(c==='preview'){var nid=window.__ankiwebEditNid;if(nid)window.open('/preview/'+nid,'_blank');return;}}"
+        "if(c==='preview'){var nid=window.__ankiwebEditNid;if(nid)window.open('/preview/'+nid,'_blank');return;}"
+        "if(c==='fields'){if(window.__ankiwebNotetypeId)window.open('/fields/'+window.__ankiwebNotetypeId,'_blank');return;}}"
         "return _awOrig?_awOrig.call(window,c,cb):undefined;}"
         "window.pycmd=_awCmd;window.bridgeCommand=_awCmd;"
     )
@@ -90,6 +91,7 @@ def editor_page_body(nid: int) -> str:
         "window.setIsImageOcclusion(d.io);"
         "window.setFonts(d.fonts);"
         "window.setNotetypeMeta(d.meta);"
+        "window.__ankiwebNotetypeId=d.meta.id;"
         "window.setNoteId(d.noteId);"
         "window.setTags(d.tags);"
         "window.triggerChanges();"
