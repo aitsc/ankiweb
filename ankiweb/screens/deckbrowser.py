@@ -1,6 +1,8 @@
 from __future__ import annotations
 import html
 
+from ankiweb.i18n import tr
+
 
 def _count_span(n: int, cls: str) -> str:
     return f"<span class='{cls}'>{n}</span>" if n else "<span class='zero-count'>0</span>"
@@ -38,8 +40,9 @@ def render_deckbrowser_html(col) -> str:
     tree = col.sched.deck_due_tree()
     current_id = col.decks.get_current_id()
     rows = [
-        "<tr><th colspan='1' align='left'>Decks</th>"
-        "<th class='count'>New</th><th class='count'>Learn</th><th class='count'>Due</th>"
+        f"<tr><th colspan='1' align='left'>{tr.actions_decks()}</th>"
+        f"<th class='count'>{tr.actions_new()}</th><th class='count'>{tr.decks_learn_header()}</th>"
+        f"<th class='count'>{tr.decks_review_header()}</th>"
         "<th></th></tr>"
     ]
     if tree is not None:
@@ -49,11 +52,11 @@ def render_deckbrowser_html(col) -> str:
     studied = f"<div id='studiedToday'><span>{html.escape(col.studied_today())}</span></div>"
     # Deck-management actions only — Decks/Add/Browse/Stats/night live in the global
     # top toolbar (render_page), shown on every screen.
-    create = ("<button onclick='ankiwebCreateDeck()'>Create Deck</button>"
-              " <button onclick='pycmd(\"createfiltered\")'>Create Filtered Deck</button>"
-              " <button onclick='ankiwebImportFile()'>Import</button>"
-              " <a href='/export'>Export</a>"
-              " <button onclick='ankiwebImageOcclusion()'>Image Occlusion</button>")
+    create = (f"<button onclick='ankiwebCreateDeck()'>{tr.decks_create_deck()}</button>"
+              f" <button onclick='pycmd(\"createfiltered\")'>{tr.qt_misc_create_filtered_deck()}</button>"
+              f" <button onclick='ankiwebImportFile()'>{tr.actions_import()}</button>"
+              f" <a href='/export'>{tr.actions_export()}</a>"
+              f" <button onclick='ankiwebImageOcclusion()'>{tr.notetypes_image_occlusion_name()}</button>")
     return f"<center>{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
 
 
