@@ -132,7 +132,11 @@ simple and avoids a runtime collection reopen just for language.)
 - `GET /preferences` → a server-rendered form (like E4/E5) rendering the 4 `get_preferences()`
   sections. **Control map (verified field types):** the **13 bool** fields → checkboxes; the
   **7 uint32** fields (scheduling `rollover`/`learn_ahead_secs`, reviewing `time_limit_secs`,
-  backups `daily`/`weekly`/`monthly`/`minimum_interval_mins`) → number inputs;
+  backups `daily`/`weekly`/`monthly`/`minimum_interval_mins`) → number inputs. **`learn_ahead_secs`
+  and `time_limit_secs` are rendered/edited in MINUTES** (proto stores seconds): the form shows
+  `value // 60` with a `preferences_mins` ("mins") suffix and the handler writes `value * 60` —
+  matching Anki desktop (`aqt/preferences.py` divides/multiplies by 60). Their form ids are
+  `learn_ahead_mins`/`time_limit_mins`;
   `editing.default_search_text` (string) → text input; `scheduling.new_review_mix` (the only
   enum: `DISTRIBUTE=0`/`REVIEWS_FIRST=1`/`NEW_FIRST=2`, labels
   `scheduling_mix_new_cards_and_reviews`/`scheduling_show_new_cards_after_reviews`/`scheduling_show_new_cards_before_reviews`)

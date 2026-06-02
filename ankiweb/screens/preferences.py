@@ -11,11 +11,12 @@ def _checkbox(field_id: str, label: str, checked: bool) -> str:
             f"{html.escape(label)}</label></div>")
 
 
-def _number(field_id: str, label: str, value: int, minv: int = 0, maxv=None) -> str:
+def _number(field_id: str, label: str, value: int, minv: int = 0, maxv=None, suffix: str = "") -> str:
     mx = f" max='{maxv}'" if maxv is not None else ""
+    suf = f" {html.escape(suffix)}" if suffix else ""
     return (f"<div><label>{html.escape(label)} "
             f"<input type='number' id='{field_id}' value='{int(value)}' "
-            f"min='{minv}'{mx} style='width:6em;'></label></div>")
+            f"min='{minv}'{mx} style='width:6em;'>{suf}</label></div>")
 
 
 def render_preferences_html(col) -> str:
@@ -36,7 +37,8 @@ def render_preferences_html(col) -> str:
     scheduling = (
         f"<fieldset><legend>{html.escape(tr.preferences_scheduling())}</legend>"
         + _number("rollover", tr.preferences_next_day_starts_at(), s.rollover, 0, 23)
-        + _number("learn_ahead_secs", tr.preferences_learn_ahead_limit(), s.learn_ahead_secs)
+        # desktop shows learn-ahead in MINUTES (proto stores seconds); render //60, handler *60
+        + _number("learn_ahead_mins", tr.preferences_learn_ahead_limit(), s.learn_ahead_secs // 60, suffix=tr.preferences_mins())
         + f"<div><label>{html.escape(tr.deck_config_new_review_priority())} "
           f"<select id='new_review_mix'>{mix_opts}</select></label></div>"
         # INVERSE: checked => legacy => new_timezone False
@@ -52,7 +54,8 @@ def render_preferences_html(col) -> str:
         + _checkbox("interrupt_audio_when_answering", tr.preferences_interrupt_current_audio_when_answering(), r.interrupt_audio_when_answering)
         + _checkbox("show_remaining_due_counts", tr.preferences_show_remaining_card_count(), r.show_remaining_due_counts)
         + _checkbox("show_intervals_on_buttons", tr.preferences_show_next_review_time_above_answer(), r.show_intervals_on_buttons)
-        + _number("time_limit_secs", tr.preferences_timebox_time_limit(), r.time_limit_secs)
+        # desktop shows the timebox limit in MINUTES (proto stores seconds)
+        + _number("time_limit_mins", tr.preferences_timebox_time_limit(), r.time_limit_secs // 60, suffix=tr.preferences_mins())
         + _checkbox("load_balancer_enabled", "Enable load balancer", r.load_balancer_enabled)
         + _checkbox("fsrs_short_term_with_steps_enabled", "Use FSRS for short-term scheduling (with steps)", r.fsrs_short_term_with_steps_enabled)
         + "</fieldset>"
@@ -94,14 +97,14 @@ function val(id){ return document.getElementById(id).value; }
 function savePrefs(){
   document.getElementById('err').textContent = '';
   var p = {
-    rollover: num('rollover'), learn_ahead_secs: num('learn_ahead_secs'),
+    rollover: num('rollover'), learn_ahead_mins: num('learn_ahead_mins'),
     new_review_mix: parseInt(document.getElementById('new_review_mix').value),
     new_timezone: !chk('legacy_timezone'), day_learn_first: chk('day_learn_first'),
     hide_audio_play_buttons: !chk('show_play_buttons'),
     interrupt_audio_when_answering: chk('interrupt_audio_when_answering'),
     show_remaining_due_counts: chk('show_remaining_due_counts'),
     show_intervals_on_buttons: chk('show_intervals_on_buttons'),
-    time_limit_secs: num('time_limit_secs'),
+    time_limit_mins: num('time_limit_mins'),
     load_balancer_enabled: chk('load_balancer_enabled'),
     fsrs_short_term_with_steps_enabled: chk('fsrs_short_term_with_steps_enabled'),
     adding_defaults_to_current_deck: chk('adding_defaults_to_current_deck'),
@@ -143,7 +146,7 @@ def make_preferences_handler(service, hub):
             prefs = col.get_preferences()
             s = prefs.scheduling
             s.rollover = int(p["rollover"])
-            s.learn_ahead_secs = int(p["learn_ahead_secs"])
+            s.learn_ahead_secs = int(p["learn_ahead_mins"]) * 60  # form is in minutes
             s.new_review_mix = int(p["new_review_mix"])
             s.new_timezone = bool(p["new_timezone"])
             s.day_learn_first = bool(p["day_learn_first"])
@@ -152,7 +155,7 @@ def make_preferences_handler(service, hub):
             r.interrupt_audio_when_answering = bool(p["interrupt_audio_when_answering"])
             r.show_remaining_due_counts = bool(p["show_remaining_due_counts"])
             r.show_intervals_on_buttons = bool(p["show_intervals_on_buttons"])
-            r.time_limit_secs = int(p["time_limit_secs"])
+            r.time_limit_secs = int(p["time_limit_mins"]) * 60  # form is in minutes
             r.load_balancer_enabled = bool(p["load_balancer_enabled"])
             r.fsrs_short_term_with_steps_enabled = bool(p["fsrs_short_term_with_steps_enabled"])
             ed = prefs.editing

@@ -42,11 +42,11 @@ async def test_saveprefs_roundtrip(tmp_path: Path):
     handler = make_preferences_handler(svc, hub)
     base = await svc.run(lambda col: col.get_preferences())
     payload = {
-        "rollover": 6, "learn_ahead_secs": 99, "new_review_mix": 2,
+        "rollover": 6, "learn_ahead_mins": 20, "new_review_mix": 2,
         "new_timezone": base.scheduling.new_timezone, "day_learn_first": True,
         "hide_audio_play_buttons": False, "interrupt_audio_when_answering": True,
         "show_remaining_due_counts": True, "show_intervals_on_buttons": True,
-        "time_limit_secs": 0, "load_balancer_enabled": True,
+        "time_limit_mins": 3, "load_balancer_enabled": True,
         "fsrs_short_term_with_steps_enabled": False,
         "adding_defaults_to_current_deck": True, "paste_images_as_png": False,
         "paste_strips_formatting": False, "default_search_text": "deck:current",
@@ -56,7 +56,8 @@ async def test_saveprefs_roundtrip(tmp_path: Path):
     await handler("savePrefs:" + json.dumps(payload))
     p = await svc.run(lambda col: col.get_preferences())
     assert p.scheduling.rollover == 6
-    assert p.scheduling.learn_ahead_secs == 99
+    assert p.scheduling.learn_ahead_secs == 20 * 60   # form minutes -> proto seconds
+    assert p.reviewing.time_limit_secs == 3 * 60
     assert p.scheduling.new_review_mix == 2
     assert p.scheduling.day_learn_first is True
     assert p.editing.default_search_text == "deck:current"
@@ -75,6 +76,9 @@ async def test_saveprefs_inverse_checkboxes(tmp_path: Path):
     payload.update({f.name: getattr(base.reviewing, f.name) for f in base.reviewing.DESCRIPTOR.fields})
     payload.update({f.name: getattr(base.editing, f.name) for f in base.editing.DESCRIPTOR.fields})
     payload.update({f.name: getattr(base.backups, f.name) for f in base.backups.DESCRIPTOR.fields})
+    # the form sends minute-valued keys for these two (not the raw proto seconds):
+    payload["learn_ahead_mins"] = base.scheduling.learn_ahead_secs // 60
+    payload["time_limit_mins"] = base.reviewing.time_limit_secs // 60
     # the JS would send these (inverted) proto values:
     payload["new_timezone"] = False
     payload["hide_audio_play_buttons"] = True

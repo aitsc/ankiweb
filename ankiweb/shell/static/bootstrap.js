@@ -53,8 +53,8 @@
     }
     handle(msg) {
       if (msg.type === "call") {
-        const f = this.calls[msg.fn];
-        const value = f ? f(...msg.args || []) : void 0;
+        const f = this.calls[msg.fn] || window[msg.fn];
+        const value = typeof f === "function" ? f(...msg.args || []) : void 0;
         if (msg.id != null) this.send({ type: "result", id: msg.id, value });
       } else if (msg.type === "eval") {
         const value = (0, eval)(msg.js);
