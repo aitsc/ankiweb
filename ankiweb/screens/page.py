@@ -37,6 +37,7 @@ _TOOLBAR_HTML = (
     "<a href='/add'>Add</a>"
     "<a href='/browse'>Browse</a>"
     "<a href='/graphs'>Stats</a>"
+    "<a href='/about' title='Source code (AGPL)'>Source</a>"
     "<button class='nm' onclick='ankiwebToggleNight()' title='Toggle night mode'>\U0001F319</button>"
     "</div>"
 )

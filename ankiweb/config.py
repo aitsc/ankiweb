@@ -32,6 +32,9 @@ class Settings:
     # Extra Host-header values accepted by the DNS-rebinding guard (beyond localhost),
     # e.g. ("192.168.1.50:8000",) or ("myhost.local",). "*" disables the check.
     allowed_hosts: tuple = ()
+    # AGPL §13 source offer: where this deployment's Corresponding Source lives. Shown on
+    # the /about page + the toolbar "Source" link. Set ANKIWEB_SOURCE_URL when deploying.
+    source_url: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -43,4 +46,5 @@ class Settings:
             import_tmp_dir=Path(os.environ["ANKIWEB_IMPORT_TMP_DIR"]) if os.environ.get("ANKIWEB_IMPORT_TMP_DIR") else (Path(os.environ.get("ANKIWEB_COLLECTION", str(default))).parent / "import-tmp"),
             allowed_hosts=tuple(
                 h.strip() for h in os.environ.get("ANKIWEB_ALLOWED_HOSTS", "").split(",") if h.strip()),
+            source_url=os.environ.get("ANKIWEB_SOURCE_URL", ""),
         )

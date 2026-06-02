@@ -144,3 +144,33 @@ tools/              fetch_web_assets.py (vendor the frontend), build_shell.mjs (
 tests/              pytest suite (backend + bridge + Playwright integration)
 docs/superpowers/   design specs + implementation plans
 ```
+
+## License
+
+ankiweb is licensed under the **GNU Affero General Public License, version 3 or later
+(AGPL-3.0-or-later)** — see [LICENSE](LICENSE).
+
+It is a **derivative/combined work**: it links the **Anki** Python library (`anki`,
+AGPL-3.0-or-later) at runtime, bundles and serves Anki's compiled frontend, and
+re-implements the **AnkiConnect** HTTP API (Copyright 2016–2021 Alex Yatskov,
+GPL-3.0-or-later) by closely following its source. Per GPLv3 §13 / AGPLv3 §13 these combine,
+and the project as a whole is distributed under AGPL-3.0-or-later. Upstream copyrights and
+the permissive sub-licenses of vendored components (MathJax/Apache-2.0, jQuery/MIT,
+protobuf.js/BSD-3, etc.) are credited in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md);
+the GPL-3.0 text covering the AnkiConnect-derived code is in
+[LICENSES/GPL-3.0-or-later.txt](LICENSES/GPL-3.0-or-later.txt).
+
+### Source code (AGPL §13)
+
+Because ankiweb is a network service, every user interacting with it over a network is
+entitled to its Corresponding Source. The running app exposes a **Source** link (the top
+toolbar → `/about`). Set **`ANKIWEB_SOURCE_URL`** to where your deployed source lives so that
+link points at the exact running version; the pinned Anki/aqt 25.9.4 source is at
+<https://github.com/ankitects/anki> and AnkiConnect at <https://github.com/FooSoft/anki-connect>.
+
+Copyright (C) 2026 tsc. Anki © Ankitects Pty Ltd and contributors. AnkiConnect © 2016–2021
+Alex Yatskov.
+
+> **Naming note:** "ankiweb" collides with Anki's own **AnkiWeb** sync service and trademark.
+> The AGPL covers the code but grants no trademark rights; consider renaming before any public
+> release to avoid implying endorsement.

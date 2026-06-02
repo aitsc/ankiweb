@@ -15,6 +15,7 @@ from ankiweb.screens.browser import render_browser_html, make_browser_handler
 from ankiweb.screens.editor import editor_page_body, make_editor_handler
 from ankiweb.screens.add import render_add_html, make_add_handler
 from ankiweb.screens.custom_study import render_custom_study_html, make_custom_study_handler
+from ankiweb.screens.about import render_about_html
 from ankiweb.screens.filtered_deck import render_filtered_deck_html, make_filtered_deck_handler
 from ankiweb.screens.export import render_export_html
 
@@ -68,6 +69,11 @@ def build_screen_router(get_service) -> APIRouter:
         service = get_service()
         body = await service.run(render_browser_html)
         return HTMLResponse(render_page("browser", body))
+
+    @router.get("/about", response_class=HTMLResponse)
+    async def about_page():
+        # AGPL §13 Corresponding-Source offer (settings carries the source URL).
+        return HTMLResponse(render_page("about", render_about_html(get_service().settings)))
 
     @router.get("/edit", response_class=HTMLResponse)
     async def edit_page(nid: int):
