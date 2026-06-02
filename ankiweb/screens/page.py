@@ -2,6 +2,8 @@ from __future__ import annotations
 import json
 from typing import Sequence
 
+from ankiweb.i18n import tr
+
 # Base dark theme for the server-rendered screens. bootstrap.js adds the
 # `night-mode` class to <html> when the persisted preference (or #night hash) is set.
 _NIGHT_CSS = (
@@ -31,16 +33,20 @@ _TOOLBAR_CSS = (
     "body{padding-top:42px;}"
     "</style>"
 )
-_TOOLBAR_HTML = (
-    "<div id='ankiweb-toolbar'>"
-    "<a href='/deckbrowser'>Decks</a>"
-    "<a href='/add'>Add</a>"
-    "<a href='/browse'>Browse</a>"
-    "<a href='/graphs'>Stats</a>"
-    "<a href='/about' title='Source code (AGPL)'>Source</a>"
-    "<button class='nm' onclick='ankiwebToggleNight()' title='Toggle night mode'>\U0001F319</button>"
-    "</div>"
-)
+def _toolbar_html() -> str:
+    """Built per request so the labels reflect the active language (a module-level
+    constant would freeze to the import-time locale). "Source" + the title= tooltips
+    + the 🌙 emoji are ankiweb-specific (keyless) and stay English."""
+    return (
+        "<div id='ankiweb-toolbar'>"
+        f"<a href='/deckbrowser'>{tr.actions_decks()}</a>"
+        f"<a href='/add'>{tr.actions_add()}</a>"
+        f"<a href='/browse'>{tr.qt_misc_browse()}</a>"
+        f"<a href='/graphs'>{tr.qt_misc_stats()}</a>"
+        "<a href='/about' title='Source code (AGPL)'>Source</a>"
+        "<button class='nm' onclick='ankiwebToggleNight()' title='Toggle night mode'>\U0001F319</button>"
+        "</div>"
+    )
 
 
 def render_page(
@@ -63,7 +69,7 @@ def render_page(
     links = "".join(f'<link rel="stylesheet" href="/_anki/{c}">' for c in css_files)
     scripts = "".join(f'<script src="/_anki/{j}"></script>' for j in js_files)
     bar_css = _TOOLBAR_CSS if toolbar else ""
-    bar_html = _TOOLBAR_HTML if toolbar else ""
+    bar_html = _toolbar_html() if toolbar else ""
     return (
         "<!doctype html>\n"
         '<html><head><meta charset="utf-8">'
