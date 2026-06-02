@@ -69,9 +69,28 @@
   var ctx = window.__ankiwebContext || new URLSearchParams(location.search).get("context") || "default";
   var bridge = new Bridge(ctx);
   window.__ankiwebBridge = bridge;
+  var SPA_NIGHT_PREFIXES = [
+    "/graphs",
+    "/deck-options",
+    "/change-notetype",
+    "/import-csv",
+    "/import-anki-package",
+    "/image-occlusion"
+  ];
+  function nightOn() {
+    return location.hash.includes("night") || localStorage.getItem("ankiweb-night") === "1";
+  }
+  function withNight(url) {
+    if (!nightOn() || url.includes("#")) return url;
+    const path = url.split("?")[0];
+    if (SPA_NIGHT_PREFIXES.some((p) => path === p || path.startsWith(p + "/"))) {
+      return url + "#night";
+    }
+    return url;
+  }
   bridge.registerCalls({
     ankiwebNavigate: (url) => {
-      location.href = String(url);
+      location.href = withNight(String(url));
     },
     ankiwebReload: () => {
       location.reload();
@@ -132,10 +151,21 @@
       location.reload();
     }
   });
-  if (location.hash.includes("night") || localStorage.getItem("ankiweb-night") === "1") {
+  if (nightOn()) {
     document.documentElement.classList.add("night-mode");
     document.documentElement.setAttribute("data-bs-theme", "dark");
   }
+  window.addEventListener("DOMContentLoaded", () => {
+    if (!nightOn()) return;
+    document.querySelectorAll("a[href]").forEach((a) => {
+      const el = a;
+      const href = el.getAttribute("href") || "";
+      if (href.startsWith("/")) {
+        const patched = withNight(href);
+        if (patched !== href) el.setAttribute("href", patched);
+      }
+    });
+  });
   window.ankiwebToggleNight = () => {
     const on = localStorage.getItem("ankiweb-night") === "1";
     localStorage.setItem("ankiweb-night", on ? "0" : "1");

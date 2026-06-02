@@ -9,10 +9,28 @@ const ctx =
 const bridge = new Bridge(ctx);
 (window as any).__ankiwebBridge = bridge;
 
+// SvelteKit SPA pages don't load this bootstrap; they read a #night hash for dark mode.
+// So when night mode is on, append #night to navigations INTO those SPA routes.
+const SPA_NIGHT_PREFIXES = [
+  "/graphs", "/deck-options", "/change-notetype",
+  "/import-csv", "/import-anki-package", "/image-occlusion",
+];
+function nightOn(): boolean {
+  return location.hash.includes("night") || localStorage.getItem("ankiweb-night") === "1";
+}
+function withNight(url: string): string {
+  if (!nightOn() || url.includes("#")) return url;
+  const path = url.split("?")[0];
+  if (SPA_NIGHT_PREFIXES.some((p) => path === p || path.startsWith(p + "/"))) {
+    return url + "#night";
+  }
+  return url;
+}
+
 // Server-invokable navigation/reload helpers (called via {type:"call"}).
 bridge.registerCalls({
   ankiwebNavigate: (url: unknown) => {
-    location.href = String(url);
+    location.href = withNight(String(url));
   },
   ankiwebReload: () => {
     location.reload();
@@ -78,10 +96,24 @@ window.addEventListener("anki-opchanges", (e: Event) => {
 
 // Night-mode: the #night hash convention OR the persisted preference. Applied
 // synchronously in <head> (before <body>) so server-rendered screens don't flash.
-if (location.hash.includes("night") || localStorage.getItem("ankiweb-night") === "1") {
+if (nightOn()) {
   document.documentElement.classList.add("night-mode");
   document.documentElement.setAttribute("data-bs-theme", "dark");
 }
+
+// When night mode is on, rewrite static links into the SvelteKit SPA pages so they
+// carry #night (those pages don't load this bootstrap — they rely on the hash).
+window.addEventListener("DOMContentLoaded", () => {
+  if (!nightOn()) return;
+  document.querySelectorAll("a[href]").forEach((a) => {
+    const el = a as HTMLAnchorElement;
+    const href = el.getAttribute("href") || "";
+    if (href.startsWith("/")) {
+      const patched = withNight(href);
+      if (patched !== href) el.setAttribute("href", patched);
+    }
+  });
+});
 
 (window as any).ankiwebToggleNight = () => {
   const on = localStorage.getItem("ankiweb-night") === "1";
