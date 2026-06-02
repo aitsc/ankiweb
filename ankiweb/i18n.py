@@ -6,7 +6,8 @@ least once — and opening a `Collection` does NOT initialize it. Screens render
 without a `Collection` (and several tests call `render_page()` directly), so this module
 guarantees a one-time, English-default `set_lang` at import. `CollectionService.open()`
 still calls `set_lang(settings.lang or "en")` and overrides this default when `ANKIWEB_LANG`
-is set (the backend is mutated in place).
+is set (set_lang installs a fresh backend and repoints the shared `tr_legacyglobal`
+translator at it, so the `tr` bound below keeps tracking the active language).
 
 Usage:  from ankiweb.i18n import tr   ;   tr.actions_add()
 Always import `tr` from here, never from `anki.lang` directly, so the guard runs first.
@@ -28,4 +29,4 @@ _ensure_lang()
 
 from anki.lang import tr_legacyglobal as tr  # noqa: E402  (must follow _ensure_lang)
 
-__all__ = ["tr", "_ensure_lang"]
+__all__ = ["tr"]

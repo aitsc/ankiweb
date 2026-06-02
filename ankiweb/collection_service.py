@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable, TypeVar
+import anki.lang
 from anki.collection import Collection
 from ankiweb.config import Settings
 from google.protobuf.descriptor import FieldDescriptor
@@ -42,7 +43,6 @@ class CollectionService:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         def _open() -> Collection:
-            import anki.lang
             anki.lang.set_lang(self._settings.lang or "en")
             return Collection(str(path), server=False)
 
@@ -53,10 +53,18 @@ class CollectionService:
         """Re-open the collection on the worker WITHOUT shutting it down — for ops
         that close it (export_collection_package). Unlike close(), keeps the executor."""
         path = self._settings.collection_path
+
+        def _reopen() -> Collection:
+            # Re-apply the language for self-consistency with open(): a fresh Collection
+            # otherwise inherits the process-global, which a second service with a different
+            # lang could have changed. Defensive — the single-service topology makes the
+            # global sufficient today.
+            anki.lang.set_lang(self._settings.lang or "en")
+            return Collection(str(path), server=False)
+
         loop = asyncio.get_event_loop()
         async with self._lock:
-            self._col = await loop.run_in_executor(
-                self._executor, lambda: Collection(str(path), server=False))
+            self._col = await loop.run_in_executor(self._executor, _reopen)
 
     async def close(self) -> None:
         if self._col is None:

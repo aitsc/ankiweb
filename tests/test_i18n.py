@@ -1,4 +1,23 @@
+import os
+import subprocess
+import sys
+
 import anki.lang
+
+
+def test_import_initializes_lang_in_fresh_process():
+    # Prove ankiweb.i18n's IMPORT is the sole initializer of the global translator — the
+    # load-bearing property for col-free render paths (the six direct-render_page tests once
+    # I2 lands). The autouse English fixture would mask this in-process (it set_langs before
+    # every test), so verify in a FRESH interpreter where current_i18n starts None.
+    code = (
+        "import anki.lang; assert anki.lang.current_i18n is None; "
+        "import ankiweb.i18n as I; "
+        "assert anki.lang.current_i18n is not None; "
+        "assert I.tr.actions_add() == 'Add'"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "ANKIWEB_LANG"}
+    subprocess.run([sys.executable, "-c", code], check=True, env=env)
 
 
 def test_ensure_lang_initializes_when_none(monkeypatch):

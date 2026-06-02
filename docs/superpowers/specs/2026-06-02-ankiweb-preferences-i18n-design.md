@@ -65,7 +65,9 @@ simple and avoids a runtime collection reopen just for language.)
   'NoneType' object is not callable` (at `anki/_backend.py:192`; **opening a `Collection` does NOT
   initialize the global** — probed: `current_i18n` stays `None` after `Collection(path)`, only
   `set_lang` initializes it). `set_lang("")` / `set_lang("en")` / an unknown code all safely yield
-  English without raising. `reopen()` inherits the process-global (no change needed). This call
+  English without raising. `reopen()` re-applies the same `set_lang` for self-consistency
+  (defensive against a future second service with a different lang; the single-service topology
+  makes the inherited process-global sufficient today). This call
   localizes `col.tr`, `tr_legacyglobal`, and the reused frontend (`i18n_resources`).
 - **`CollectionService.open()` is NOT a sufficient chokepoint by itself.** `render_page`
   (`page.py:46`) is a standalone function with no `Collection`, and the toolbar (made per-request

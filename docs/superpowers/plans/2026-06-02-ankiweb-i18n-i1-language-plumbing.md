@@ -253,7 +253,7 @@ In `ankiweb/collection_service.py`, change the `_open` closure inside `open()` (
             return Collection(str(path), server=False)
 ```
 
-Leave `reopen()` unchanged — it inherits the process-global language set here.
+Also re-apply `set_lang` inside `reopen()`'s closure (same one line) for self-consistency with `open()` — defensive against a future second service with a different language; the single-service topology makes the inherited process-global sufficient today.
 
 - [ ] **Step 4: Run test to verify it passes**
 
