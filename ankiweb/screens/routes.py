@@ -19,6 +19,7 @@ from ankiweb.screens.about import render_about_html
 from ankiweb.screens.filtered_deck import render_filtered_deck_html, make_filtered_deck_handler
 from ankiweb.screens.export import render_export_html
 from ankiweb.screens.preferences import render_preferences_html, make_preferences_handler
+from ankiweb.screens.preview import render_preview_html
 
 
 def build_screen_router(get_service) -> APIRouter:
@@ -89,6 +90,12 @@ def build_screen_router(get_service) -> APIRouter:
             "editor", editor_page_body(nid),
             ["css/editor.css", "css/editable.css"],
             ["js/mathjax.js", "js/editor.js"], toolbar=False))
+
+    @router.get("/preview/{nid}", response_class=HTMLResponse)
+    async def preview_page(nid: int):
+        service = get_service()
+        body = await service.run(lambda col: render_preview_html(col, nid))
+        return HTMLResponse(render_page("preview", body))
 
     @router.get("/add", response_class=HTMLResponse)
     async def add_page():

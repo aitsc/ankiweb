@@ -56,6 +56,28 @@ def paste_handler_js() -> str:
     )
 
 
+def editor_links_js() -> str:
+    """Wraps the bridge so the editor toolbar's host-dependent buttons work in the browser:
+    'attach' -> a file picker -> /upload_media -> pasteHTML(img/[sound:]); 'preview' ->
+    open /preview/<nid> in a new tab (browse mode only). 'fields'/'cards' are added by F5/F6.
+    Everything else passes through to the real bridge (blur/key/saveTags/paste...)."""
+    return (
+        "var _awOrig=window.pycmd;"
+        "function _awAttach(){var inp=document.createElement('input');inp.type='file';"
+        "inp.accept='image/*,audio/*,video/*';inp.onchange=function(){"
+        "var f=inp.files&&inp.files[0];if(!f)return;var fd=new FormData();fd.append('file',f,f.name);"
+        "fetch('/upload_media',{method:'POST',body:fd}).then(function(r){return r.json();})"
+        ".then(function(j){if(!j.filename)return;var fn=j.filename,tag;"
+        "if(/\\.(png|jpg|jpeg|gif|webp|bmp|svg|avif)$/i.test(fn))tag='<img src=\"'+fn+'\">';"
+        "else tag='[sound:'+fn+']';window.pasteHTML(tag,false,false);});};inp.click();}"
+        "function _awCmd(c,cb){if(typeof c==='string'){"
+        "if(c==='attach'){_awAttach();return;}"
+        "if(c==='preview'){var nid=window.__ankiwebEditNid;if(nid)window.open('/preview/'+nid,'_blank');return;}}"
+        "return _awOrig?_awOrig.call(window,c,cb):undefined;}"
+        "window.pycmd=_awCmd;window.bridgeCommand=_awCmd;"
+    )
+
+
 def editor_page_body(nid: int) -> str:
     return (
         f"<script>window.__ankiwebEditNid={int(nid)}</script>"
@@ -75,7 +97,8 @@ def editor_page_body(nid: int) -> str:
         "require('anki/ui').loaded.then(function(){"
         "window.pycmd('load:'+window.__ankiwebEditNid);"
         "});"
-        + paste_handler_js() +
+        + paste_handler_js()
+        + editor_links_js() +
         "})();</script>"
     )
 
