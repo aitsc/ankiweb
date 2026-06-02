@@ -22,6 +22,7 @@ from ankiweb.screens.preferences import render_preferences_html, make_preference
 from ankiweb.screens.preview import render_preview_html
 from ankiweb.screens.fields import render_fields_html, make_fields_handler
 from ankiweb.screens.card_layout import render_card_layout_html, make_card_layout_handler
+from ankiweb.screens.tools import render_tools_html, make_tools_handler
 
 
 def build_screen_router(get_service) -> APIRouter:
@@ -91,6 +92,12 @@ def build_screen_router(get_service) -> APIRouter:
         service = get_service()
         body = await service.run(lambda col: render_card_layout_html(col, ntid))
         return HTMLResponse(render_page("cardlayout", body))
+
+    @router.get("/tools", response_class=HTMLResponse)
+    async def tools_page():
+        service = get_service()
+        body = await service.run(render_tools_html)
+        return HTMLResponse(render_page("tools", body))
 
     @router.get("/about", response_class=HTMLResponse)
     async def about_page():
@@ -245,6 +252,7 @@ def register_screen_handlers(service, hub) -> None:
     hub.set_handler("preferences", make_preferences_handler(service, hub))
     hub.set_handler("fields", make_fields_handler(service, hub))
     hub.set_handler("cardlayout", make_card_layout_handler(service, hub))
+    hub.set_handler("tools", make_tools_handler(service, hub))
 
     hub.set_handler("reviewer", make_reviewer_handler(service, hub))
     hub.set_handler("browser", make_browser_handler(service, hub))

@@ -44,6 +44,8 @@ def _toolbar_html() -> str:
         f"<a href='/browse'>{tr.qt_misc_browse()}</a>"
         f"<a href='/graphs'>{tr.qt_misc_stats()}</a>"
         f"<a href='/preferences'>{tr.preferences_preferences()}</a>"
+        # qt_accel_tools is "&Tools" (menu accelerator); strip the & for a clean label.
+        f"<a href='/tools'>{tr.qt_accel_tools().replace('&', '')}</a>"
         "<a href='/about' title='Source code (AGPL)'>Source</a>"
         "<button class='nm' onclick='ankiwebToggleNight()' title='Toggle night mode'>\U0001F319</button>"
         "</div>"
