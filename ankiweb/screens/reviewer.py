@@ -111,6 +111,40 @@ def ease_buttons_bar(labels) -> str:
     return "<div class='ease-row'>" + "".join(cells) + "</div>"
 
 
+def reviewer_actions_bar() -> str:
+    """A compact bar of card-action buttons (Anki's reviewer 'More' menu), each issuing a
+    pycmd handled by make_reviewer_handler. Labels follow the active language via tr (with
+    keyless English fallbacks). Set Due / Forget / Delete prompt/confirm client-side."""
+    def lbl(key, fallback):
+        f = getattr(tr, key, None)
+        return f() if f is not None else fallback
+    btn = ("<button type='button' class='rev-act' "
+           "onclick=\"{onclick}\">{label}</button>")
+    parts = [
+        btn.format(onclick="pycmd('mark')", label=_html.escape(lbl("studying_mark_note", "Mark Note"))),
+        btn.format(onclick="pycmd('buryc')", label=_html.escape(lbl("studying_bury_card", "Bury Card"))),
+        btn.format(onclick="pycmd('buryn')", label=_html.escape(lbl("studying_bury_note", "Bury Note"))),
+        btn.format(onclick="pycmd('suspendc')", label=_html.escape(lbl("actions_suspend_card", "Suspend Card"))),
+        btn.format(onclick="pycmd('suspendn')", label=_html.escape(lbl("studying_suspend_note", "Suspend Note"))),
+        btn.format(onclick="ankiwebSetDue()", label=_html.escape(lbl("actions_set_due_date", "Set Due Date"))),
+        btn.format(onclick="pycmd('forget')", label=_html.escape(lbl("actions_forget_card", "Reset Card"))),
+        btn.format(onclick="ankiwebDeleteNote()", label=_html.escape(lbl("studying_delete_note", "Delete Note"))),
+        btn.format(onclick="pycmd('cardinfo')", label=_html.escape(lbl("actions_card_info", "Card Info"))),
+        btn.format(onclick="pycmd('undo')", label=_html.escape(lbl("undo_undo", "Undo"))),
+    ]
+    # Flag buttons 1..4 + a clear (flag 0)
+    flag_labels = [
+        ("actions_flag_red", "Red"), ("actions_flag_orange", "Orange"),
+        ("actions_flag_green", "Green"), ("actions_flag_blue", "Blue"),
+    ]
+    for i, (key, fb) in enumerate(flag_labels, start=1):
+        parts.append(btn.format(onclick=f"pycmd('setflag:{i}')",
+                                 label=_html.escape(f"⚑ {lbl(key, fb)}")))
+    parts.append(btn.format(onclick="pycmd('setflag:0')",
+                            label=_html.escape(lbl("browsing_no_flag", "No Flag"))))
+    return "<div id='rev-actions'>" + "".join(parts) + "</div>"
+
+
 def reviewer_page_body() -> str:
     """The reviewer DOM shell + inline script that registers the JS calls the server
     pushes (_showQuestion/_showAnswer from reviewer.js; ankiwebSetAnswerBar for our bar)
@@ -120,6 +154,7 @@ def reviewer_page_body() -> str:
         "<div id='_flag' hidden>⚑</div>"
         "<div id='qa' dir='auto'></div>"
         "<div id='ankiweb-answer'></div>"
+        + reviewer_actions_bar() +
         "<script>(function(){"
         "var b=window.__ankiwebBridge;"
         "var _ankiAudio=null;"
@@ -143,21 +178,42 @@ def reviewer_page_body() -> str:
         "window.ankiwebShowAnswer=ankiwebShowAnswer;"
         "function ankiwebTypeAnsPress(e){if(e&&(e.key==='Enter'||e.keyCode===13)){ankiwebShowAnswer();}}"
         "window.ankiwebTypeAnsPress=ankiwebTypeAnsPress;"
+        "function ankiwebSetDue(){"
+        "  var s=window.prompt('Set due date (e.g. 0, 3, 1-7):','');"
+        "  if(s!==null&&s!==''){window.pycmd('setdue:'+s);}"
+        "}"
+        "window.ankiwebSetDue=ankiwebSetDue;"
+        "function ankiwebDeleteNote(){"
+        "  if(window.confirm('Delete this note?')){window.pycmd('deletenote');}"
+        "}"
+        "window.ankiwebDeleteNote=ankiwebDeleteNote;"
         "b.registerCalls({"
         "_showQuestion:function(){_side='question';return window._showQuestion.apply(window,arguments);},"
         "_showAnswer:function(){_side='answer';return window._showAnswer.apply(window,arguments);},"
         "ankiwebSetAnswerBar:function(h){"
         "document.getElementById('ankiweb-answer').innerHTML=String(h);},"
-        "ankiwebPlayAudio:function(files){return ankiwebPlayAudio(files);}"
+        "ankiwebPlayAudio:function(files){return ankiwebPlayAudio(files);},"
+        "_drawMark:function(b){return window._drawMark&&window._drawMark(b);},"
+        "_drawFlag:function(n){return window._drawFlag&&window._drawFlag(n);},"
+        "ankiwebReviewerError:function(m){alert(m);}"
         "});"
         "document.addEventListener('keydown',function(e){"
         "  var t=document.activeElement;"
         "  if(t&&(t.id==='typeans'||t.tagName==='INPUT'||t.tagName==='TEXTAREA'))return;"
         "  var k=e.key;"
+        "  if(e.ctrlKey&&(k==='1'||k==='2'||k==='3'||k==='4')){e.preventDefault();window.pycmd('setflag:'+k);return;}"
+        "  if(e.ctrlKey||e.metaKey||e.altKey)return;"
         "  if(k===' '||k==='Enter'){e.preventDefault();if(_side==='question'){window.ankiwebShowAnswer();}else{window.pycmd('ease3');}}"
         "  else if(_side==='answer'&&(k==='1'||k==='2'||k==='3'||k==='4')){e.preventDefault();window.pycmd('ease'+k);}"
         "  else if(k==='r'||k==='R'||k==='F5'){e.preventDefault();window.pycmd('replay');}"
         "  else if(k==='e'||k==='E'){e.preventDefault();window.pycmd('edit');}"
+        "  else if(k==='*'){e.preventDefault();window.pycmd('mark');}"
+        "  else if(k==='-'){e.preventDefault();window.pycmd('buryc');}"
+        "  else if(k==='='){e.preventDefault();window.pycmd('buryn');}"
+        "  else if(k==='@'){e.preventDefault();window.pycmd('suspendc');}"
+        "  else if(k==='!'){e.preventDefault();window.pycmd('suspendn');}"
+        "  else if(k==='i'||k==='I'){e.preventDefault();window.pycmd('cardinfo');}"
+        "  else if(k==='u'||k==='U'){e.preventDefault();window.pycmd('undo');}"
         "});"
         "window.addEventListener('load',function(){window.pycmd('show');});"
         "})();</script>"
@@ -240,6 +296,112 @@ def make_reviewer_handler(service, hub):
             session.typed_answer = arg[len("typed:"):]
         elif arg == "decks":
             await hub.push_call("reviewer", "ankiwebNavigate", ["/deckbrowser"])
+        elif arg == "mark":
+            if session.card is None:
+                return None
+
+            state = {}
+
+            def toggle_mark(col):
+                n = session.card.note()
+                if "marked" in n.tags:
+                    n.tags.remove("marked")
+                    state["marked"] = False
+                else:
+                    n.tags.append("marked")
+                    state["marked"] = True
+                return col.update_note(n, skip_undo_entry=False)
+            await service.run_op(toggle_mark, initiator="reviewer")
+            await hub.push_call("reviewer", "_drawMark", [state["marked"]])
+        elif arg.startswith("setflag:"):
+            if session.card is None:
+                return None
+            try:
+                flag = int(arg[len("setflag:"):])
+            except ValueError:
+                return None
+            if not 0 <= flag <= 4:
+                return None
+            cid = session.card.id
+            await service.run_op(
+                lambda col: col.set_user_flag_for_cards(flag, [cid]),
+                initiator="reviewer")
+            await hub.push_call("reviewer", "_drawFlag", [flag])
+        elif arg == "buryc":
+            if session.card is None:
+                return None
+            cid = session.card.id
+            await service.run_op(lambda col: col.sched.bury_cards([cid]),
+                                 initiator="reviewer")
+            await _show_next()
+        elif arg == "buryn":
+            if session.card is None:
+                return None
+            nid = session.card.note().id
+            await service.run_op(lambda col: col.sched.bury_notes([nid]),
+                                 initiator="reviewer")
+            await _show_next()
+        elif arg == "suspendc":
+            if session.card is None:
+                return None
+            cid = session.card.id
+            await service.run_op(lambda col: col.sched.suspend_cards([cid]),
+                                 initiator="reviewer")
+            await _show_next()
+        elif arg == "suspendn":
+            if session.card is None:
+                return None
+
+            def suspend_note(col):
+                cids = [c.id for c in session.card.note().cards()]
+                return col.sched.suspend_cards(cids)
+            await service.run_op(suspend_note, initiator="reviewer")
+            await _show_next()
+        elif arg.startswith("setdue:"):
+            if session.card is None:
+                return None
+            spec = arg[len("setdue:"):]
+            cid = session.card.id
+            try:
+                await service.run_op(
+                    lambda col: col.sched.set_due_date([cid], spec),
+                    initiator="reviewer")
+            except Exception as e:  # invalid spec, etc.
+                await hub.push_call("reviewer", "ankiwebReviewerError", [str(e)])
+                return None
+            await _show_next()
+        elif arg == "forget":
+            if session.card is None:
+                return None
+            cid = session.card.id
+            await service.run_op(
+                lambda col: col.sched.schedule_cards_as_new([cid]),
+                initiator="reviewer")
+            await _show_next()
+        elif arg == "deletenote":
+            if session.card is None:
+                return None
+            nid = session.card.note().id
+            await service.run_op(lambda col: col.remove_notes([nid]),
+                                 initiator="reviewer")
+            await _show_next()
+        elif arg == "undo":
+            if session.card is None:
+                return None
+            import anki.errors
+            try:
+                await service.run_op(lambda col: col.undo(), initiator="reviewer")
+            except anki.errors.UndoEmpty:
+                await hub.push_call("reviewer", "ankiwebReviewerError",
+                                    [tr.actions_nothing_to_undo()])
+                return None
+            await _show_next()
+        elif arg == "cardinfo":
+            if session.card is None:
+                return None
+            cid = session.card.id
+            await hub.push_call("reviewer", "ankiwebNavigate",
+                                ["/card-info/" + str(cid)])
         # ignore everything else (e.g. reviewer.js emits "updateToolbar" after each render)
         return None
 
