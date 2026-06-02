@@ -18,6 +18,7 @@ from ankiweb.screens.custom_study import render_custom_study_html, make_custom_s
 from ankiweb.screens.about import render_about_html
 from ankiweb.screens.filtered_deck import render_filtered_deck_html, make_filtered_deck_handler
 from ankiweb.screens.export import render_export_html
+from ankiweb.screens.preferences import render_preferences_html, make_preferences_handler
 
 
 def build_screen_router(get_service) -> APIRouter:
@@ -69,6 +70,12 @@ def build_screen_router(get_service) -> APIRouter:
         service = get_service()
         body = await service.run(render_browser_html)
         return HTMLResponse(render_page("browser", body))
+
+    @router.get("/preferences", response_class=HTMLResponse)
+    async def preferences_page():
+        service = get_service()
+        body = await service.run(render_preferences_html)
+        return HTMLResponse(render_page("preferences", body))
 
     @router.get("/about", response_class=HTMLResponse)
     async def about_page():
@@ -214,6 +221,7 @@ def register_screen_handlers(service, hub) -> None:
     hub.set_handler("overview", make_overview_handler(service, hub))
     hub.set_handler("customstudy", make_custom_study_handler(service, hub))
     hub.set_handler("filtereddeck", make_filtered_deck_handler(service, hub))
+    hub.set_handler("preferences", make_preferences_handler(service, hub))
 
     hub.set_handler("reviewer", make_reviewer_handler(service, hub))
     hub.set_handler("browser", make_browser_handler(service, hub))

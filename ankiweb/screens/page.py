@@ -43,6 +43,7 @@ def _toolbar_html() -> str:
         f"<a href='/add'>{tr.actions_add()}</a>"
         f"<a href='/browse'>{tr.qt_misc_browse()}</a>"
         f"<a href='/graphs'>{tr.qt_misc_stats()}</a>"
+        f"<a href='/preferences'>{tr.preferences_preferences()}</a>"
         "<a href='/about' title='Source code (AGPL)'>Source</a>"
         "<button class='nm' onclick='ankiwebToggleNight()' title='Toggle night mode'>\U0001F319</button>"
         "</div>"
