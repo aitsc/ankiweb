@@ -66,9 +66,9 @@ def build_screen_router(get_service) -> APIRouter:
         ))
 
     @router.get("/browse", response_class=HTMLResponse)
-    async def browse_page():
+    async def browse_page(q: str = ""):
         service = get_service()
-        body = await service.run(render_browser_html)
+        body = await service.run(lambda col: render_browser_html(col, q))
         return HTMLResponse(render_page("browser", body))
 
     @router.get("/preferences", response_class=HTMLResponse)

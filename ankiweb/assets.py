@@ -2,7 +2,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+
+# Injected into the served SvelteKit shell so the SPA's bridgeCommand("browserSearch:<q>")
+# (e.g. graphs count-links) opens ankiweb's browser instead of being a no-op. The SPA has no
+# pycmd host otherwise; this defines a minimal one before the app modules load. Other bridge
+# commands are intentionally ignored (same as before).
+_SPA_BRIDGE = (
+    "<script>window.pycmd=window.bridgeCommand=function(c){try{"
+    "if(typeof c==='string'&&c.indexOf('browserSearch:')===0){"
+    "location.href='/browse?q='+encodeURIComponent(c.slice(14));}}catch(e){}};</script>"
+)
 
 # subset of mediasrv _mime_for_path (mediasrv.py:171-210)
 MIME = {
@@ -81,9 +91,14 @@ def build_sveltekit_router(assets_dir: Path) -> APIRouter:
     router = APIRouter()
     index = assets_dir / "sveltekit" / "index.html"
 
+    def _shell_with_bridge() -> str:
+        html = index.read_text(encoding="utf-8")
+        return html.replace("<head>", "<head>" + _SPA_BRIDGE, 1)
+
     @router.get("/graphs")
     def graphs_page() -> Response:
-        return FileResponse(index, media_type="text/html")
+        # served with the browserSearch bridge so the stats count-links open /browse
+        return HTMLResponse(_shell_with_bridge())
 
     @router.get("/deck-options/{deck_id}")
     def deck_options_page(deck_id: str) -> Response:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import html
+import json
 import re
 
 from ankiweb.i18n import tr
@@ -44,12 +45,13 @@ def _sidebar_html(col) -> str:
     return "".join(parts)
 
 
-def render_browser_html(col) -> str:
+def render_browser_html(col, query: str = "") -> str:
     return (
         _STYLE +
         "<div id='browser'>"
         "<div id='browser-top'>"
         f"<input id='search' type='text' autofocus placeholder='{tr.actions_search()}…' "
+        f"value=\"{html.escape(query, quote=True)}\" "
         "onkeydown=\"if(event.key==='Enter'){window.pycmd('search:'+this.value);}\">"
         "<span id='browser-status'></span>"
         "<div id='browser-actions'>"
@@ -100,7 +102,7 @@ def render_browser_html(col) -> str:
         "});"
         "document.getElementById('results-body').addEventListener('click',function(e){"
         "var tr=e.target.closest('tr');if(tr&&tr.dataset.cid){_click(tr,e);}});"
-        "window.addEventListener('load',function(){window.pycmd('search:');});"
+        f"window.addEventListener('load',function(){{window.pycmd('search:'+{json.dumps(query)});}});"
         "})();</script>"
     )
 
