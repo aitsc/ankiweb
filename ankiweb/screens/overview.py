@@ -1,5 +1,6 @@
 from __future__ import annotations
 import html
+from ankiweb.i18n import tr
 from ankiweb.screens.congrats import render_congrats_html
 
 
@@ -77,34 +78,35 @@ def render_overview_html(col) -> str:
 
     table = (
         "<table cellspacing='0' cellpadding='5' class='overview-counts'><tr>"
-        "<th>New</th><th>Learning</th><th>To Review</th></tr><tr>"
+        f"<th>{tr.statistics_counts_new_cards()}</th><th>{tr.statistics_counts_learning_cards()}</th>"
+        f"<th>{tr.studying_to_review()}</th></tr><tr>"
         f"{_number_cell(new, 'new-count')}"
         f"{_number_cell(learn, 'learn-count')}"
         f"{_number_cell(review, 'review-count')}"
         "</tr></table>"
     )
     study = ("<button id='study' class='but' autofocus "
-             "onclick=\"pycmd('study');return false;\">Study Now</button>")
+             f"onclick=\"pycmd('study');return false;\">{tr.studying_study_now()}</button>")
 
-    bottom = ["<button onclick='pycmd(\"opts\")'>Options</button>"]
+    bottom = [f"<button onclick='pycmd(\"opts\")'>{tr.actions_options()}</button>"]
     if deck.get("dyn"):
-        bottom.append("<button onclick='pycmd(\"refresh\")'>Rebuild</button>")
-        bottom.append("<button onclick='pycmd(\"empty\")'>Empty</button>")
+        bottom.append(f"<button onclick='pycmd(\"refresh\")'>{tr.actions_rebuild()}</button>")
+        bottom.append(f"<button onclick='pycmd(\"empty\")'>{tr.studying_empty()}</button>")
     else:
-        bottom.append("<button onclick='pycmd(\"studymore\")'>Custom Study</button>")
+        bottom.append(f"<button onclick='pycmd(\"studymore\")'>{tr.actions_custom_study()}</button>")
     if col.sched.have_buried():
-        bottom.append("<button onclick='pycmd(\"unbury\")'>Unbury</button>")
+        bottom.append(f"<button onclick='pycmd(\"unbury\")'>{tr.studying_unbury()}</button>")
     bottom.append("<button onclick=\"document.getElementById('descedit').style.display=''\">"
-                  "Edit Description</button>")
-    bottom.append("<button onclick='pycmd(\"decks\")'>Decks</button>")
+                  f"{tr.studying_edit()} {tr.fields_description()}</button>")
+    bottom.append(f"<button onclick='pycmd(\"decks\")'>{tr.actions_decks()}</button>")
 
     md_checked = "checked" if deck.get("md") else ""
     descedit = (
         "<div id='descedit' style='display:none;margin-top:10px;'>"
         f"<textarea id='descbox' rows='4' cols='50'>{html.escape(raw)}</textarea><br>"
         f"<label><input type='checkbox' id='descmd' {md_checked}> Render as markdown</label><br>"
-        "<button onclick='saveDesc()'>Save</button> "
-        "<button onclick=\"document.getElementById('descedit').style.display='none'\">Cancel</button>"
+        f"<button onclick='saveDesc()'>{tr.actions_save()}</button> "
+        f"<button onclick=\"document.getElementById('descedit').style.display='none'\">{tr.actions_cancel()}</button>"
         "</div>"
         "<script>function saveDesc(){"
         "var d=document.getElementById('descbox').value,"
