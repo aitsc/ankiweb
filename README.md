@@ -95,9 +95,16 @@ network). It covers both HTTP and the WebSocket bridge.
 
 ### Night mode
 
-Toggle with the 🌙 button on the deck list (persisted in `localStorage`); it themes the
+Toggle with the 🌙 button in the top toolbar (persisted in `localStorage`); it themes the
 server-rendered pages and threads `#night` into links to the SvelteKit pages so those
 render dark too.
+
+### Navigation
+
+Every server-rendered screen has an always-present top toolbar — **Decks · Add · Browse ·
+Stats** (Anki's main-window toolbar, minus Sync) plus the night-mode toggle. The SvelteKit
+pages (graphs, deck options, change-notetype, imports, image occlusion) are task pages
+opened from there; use the browser's back button to return.
 
 ## Architecture
 
