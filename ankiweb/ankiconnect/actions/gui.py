@@ -205,12 +205,19 @@ async def gui_play_audio(rt):
     return True
 
 
-# ---------- deferred to Plan D (editor/import) — faithful stubs now ----------
 @action("guiAddNoteSetData")
 async def gui_add_note_set_data(rt, note=None, append=False):
-    # The Add Note editor dialog is Plan D; it is never open pre-D, so return exactly
-    # AnkiConnect's "dialog not open" payload.
-    return {"error": "Add Note dialog is not open", "code": 1}
+    # Live-prefill the OPEN Add dialog (the /add page, connected at context=="add").
+    # When it isn't open, return AnkiConnect's "dialog not open" payload.
+    # (append is accepted for contract compatibility; this sets the fields.)
+    if _ui(rt).current_screen != "add":
+        return {"error": "Add Note dialog is not open", "code": 1}
+    from ankiweb.screens.add import load_data_for_spec
+    data = await rt.service.run(lambda col: load_data_for_spec(col, note or {}))
+    if data is None:
+        return {"error": "Add Note dialog is not open", "code": 1}
+    await rt.hub.push_call("add", "ankiwebLoadNote", [data])
+    return None
 
 
 @action("guiEditNote")
@@ -228,15 +235,22 @@ async def gui_add_cards(rt, note=None):
     # return the prospective (unsaved) note id — like the reference, which returns the
     # not-yet-saved ankiNote.id. The note is NOT added to the collection.
     if note is None:
-        return 0  # blank dialog → fresh unsaved note (deferred to Plan D)
+        return 0  # blank dialog → fresh unsaved note
+
+    open_ = _ui(rt).current_screen == "add"
+    from ankiweb.screens.add import load_data_for_spec
 
     def build(col):
         did = col.decks.id_for_name(note.get("deckName", ""))
         if did is None:
             raise Exception("deck was not found: " + str(note.get("deckName")))
         n, _ = build_note(col, note)  # raises on unknown model/fields (faithful validation)
-        return n.id                   # unsaved note id (0 until added; dialog deferred to D)
-    return await rt.service.run(build)
+        data = load_data_for_spec(col, note) if open_ else None
+        return n.id, data             # unsaved note id; prefill payload if the dialog is open
+    nid, data = await rt.service.run(build)
+    if data is not None:              # live-prefill the open Add dialog
+        await rt.hub.push_call("add", "ankiwebLoadNote", [data])
+    return nid
 
 
 # ---------- server-incompatible (refuse / no-op) ----------

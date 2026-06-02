@@ -29,6 +29,24 @@ def _empty_load(col, ntid: int) -> dict:
     }
 
 
+def load_data_for_spec(col, note_spec) -> dict | None:
+    """Build the `ankiwebLoadNote` payload for an AnkiConnect note spec
+    (modelName/fields/tags) — used by guiAddCards/guiAddNoteSetData to live-prefill
+    the open Add dialog. Returns None if the model is unknown (case-insensitive fields)."""
+    spec = note_spec or {}
+    model = col.models.by_name(spec.get("modelName", "")) if spec.get("modelName") else None
+    if model is None:
+        return None
+    d = _empty_load(col, model["id"])
+    by_lower = {f["name"].lower(): i for i, f in enumerate(model["flds"])}
+    for key, val in (spec.get("fields") or {}).items():
+        i = by_lower.get(str(key).lower())
+        if i is not None:
+            d["fields"][i][1] = val
+    d["tags"] = list(spec.get("tags") or [])
+    return d
+
+
 def add_page_body(deck_opts: str, nt_opts: str) -> str:
     return (
         _STYLE +
