@@ -22,6 +22,9 @@ def render_about_html(settings) -> str:
     return (
         "<div class='about' style='max-width:640px;margin:0 auto;'>"
         f"<h2>ankiweb {html.escape(ver)}</h2>"
+        "<p><strong>Unofficial, personal, single-user project.</strong> An independent "
+        "browser port of Anki — not affiliated with or endorsed by Ankitects, and not the "
+        "official AnkiWeb sync service.</p>"
         "<p>ankiweb is free software, licensed under the <strong>GNU Affero General Public "
         "License, version 3 or later</strong> (AGPL-3.0-or-later). It is distributed in the "
         "hope that it will be useful, but WITHOUT ANY WARRANTY.</p>"

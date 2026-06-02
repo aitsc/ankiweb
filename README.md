@@ -1,5 +1,13 @@
 # ankiweb
 
+> ⚠️ **Unofficial, personal, single-user project — not affiliated with Anki/Ankitects.**
+> This is an independent, community browser port of [Anki](https://apps.ankiweb.net),
+> intended to be run by **one user on their own machine**. It is **NOT** affiliated with,
+> endorsed by, or connected to Ankitects Pty Ltd, and it is **NOT** the official **AnkiWeb**
+> sync service at apps.ankiweb.net. "Anki" and "AnkiWeb" are names of that upstream
+> project/service. This is a hobby/personal implementation provided as-is, with no warranty,
+> under AGPL-3.0-or-later (see [LICENSE](LICENSE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)).
+
 A **browser port of Anki desktop + AnkiConnect**, built on the official `anki` Python
 package (pylib) + FastAPI. It serves Anki's real study UI in a browser and re-implements
 the full AnkiConnect HTTP API — for a single user, on your own machine.
