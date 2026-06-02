@@ -71,10 +71,11 @@ def build_screen_router(get_service) -> APIRouter:
 
     @router.get("/edit", response_class=HTMLResponse)
     async def edit_page(nid: int):
+        # No global toolbar: /edit is embedded as the Browser's detail iframe.
         return HTMLResponse(render_page(
             "editor", editor_page_body(nid),
             ["css/editor.css", "css/editable.css"],
-            ["js/mathjax.js", "js/editor.js"]))
+            ["js/mathjax.js", "js/editor.js"], toolbar=False))
 
     @router.get("/add", response_class=HTMLResponse)
     async def add_page():

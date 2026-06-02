@@ -47,19 +47,14 @@ def render_deckbrowser_html(col) -> str:
             _render_node(child, current_id, rows)
     table = "<table cellspacing='0' cellpadding='3' class='decks'>" + "".join(rows) + "</table>"
     studied = f"<div id='studiedToday'><span>{html.escape(col.studied_today())}</span></div>"
+    # Deck-management actions only — Decks/Add/Browse/Stats/night live in the global
+    # top toolbar (render_page), shown on every screen.
     create = ("<button onclick='ankiwebCreateDeck()'>Create Deck</button>"
               " <button onclick='pycmd(\"createfiltered\")'>Create Filtered Deck</button>"
               " <button onclick='ankiwebImportFile()'>Import</button>"
               " <a href='/export'>Export</a>"
-              " <button onclick='ankiwebImageOcclusion()'>Image Occlusion</button>"
-              " <a href='/graphs'>Stats</a>"
-              " <button onclick='ankiwebToggleNight()' title='Toggle night mode'>🌙</button>")
-    # Top toolbar — Anki's main-window Add/Browse entry points (this app has no global
-    # toolbar, so the deck list carries them).
-    nav = ("<div class='top-nav'>"
-           "<a href='/add'>Add</a> &nbsp;&middot;&nbsp; <a href='/browse'>Browse</a>"
-           "</div>")
-    return f"<center>{nav}{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
+              " <button onclick='ankiwebImageOcclusion()'>Image Occlusion</button>")
+    return f"<center>{table}{studied}<div class='dyn-buttons'>{create}</div></center>"
 
 
 def make_deckbrowser_handler(service, hub):

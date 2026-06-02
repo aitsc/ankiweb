@@ -7,9 +7,10 @@ from ankiweb.collection_service import op_changes_to_flags
 
 _STYLE = (
     "<style>"
-    "#add-chrome{position:fixed;top:0;left:0;right:0;height:38px;display:flex;gap:8px;"
+    # sits BELOW the global top toolbar (render_page, 34px tall, z-index 2000)
+    "#add-chrome{position:fixed;top:42px;left:0;right:0;height:38px;display:flex;gap:8px;"
     "align-items:center;padding:4px 8px;background:#f4f4f4;border-bottom:1px solid #ccc;z-index:1000}"
-    "body{padding-top:44px}"
+    "body{padding-top:84px}"
     "#add-toast{color:#080;margin-left:8px}"
     "</style>"
 )
