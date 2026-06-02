@@ -100,6 +100,11 @@ def editor_page_body(nid: int) -> str:
         "require('anki/ui').loaded.then(function(){"
         "window.pycmd('load:'+window.__ankiwebEditNid);"
         "});"
+        # The Browser reuses this iframe across card switches: load a different note IN-PLACE
+        # (re-renders via ankiwebLoadNote) instead of reloading the whole 3.5MB editor.
+        "window.addEventListener('message',function(ev){var d=ev.data;"
+        "if(d&&d.type==='ankiwebLoadNid'&&d.nid){window.__ankiwebEditNid=d.nid;"
+        "require('anki/ui').loaded.then(function(){window.pycmd('load:'+d.nid);});}});"
         + paste_handler_js()
         + editor_links_js() +
         "})();</script>"

@@ -92,13 +92,21 @@ def render_browser_html(col, query: str = "") -> str:
         "else{_sel=[cid];_anchor=cid;}_selChanged();}"
         "window.ankiwebAct=function(v){window.pycmd(v);};"
         "window.ankiwebCardInfo=function(){if(_sel.length)window.open('/card-info/'+_sel[0],'_blank');};"
+        # Reuse ONE editor iframe across card switches: if it's already mounted, just postMessage
+        # the new note id (the editor reloads the note in-place — no 3.5MB editor.js re-parse);
+        # only build the iframe when none exists (first select / after a clear).
+        "window.ankiwebShowEditor=function(nid){var d=document.getElementById('detail');"
+        "var f=document.getElementById('editor-frame');"
+        "if(f&&f.contentWindow){f.contentWindow.postMessage({type:'ankiwebLoadNid',nid:nid},'*');}"
+        "else{d.innerHTML=\"<iframe id='editor-frame' class='editor-frame' src='/edit?nid=\"+nid+\"'></iframe>\";}};"
         "window.ankiwebActP=function(v,m){var x=prompt(m);"
         "if(x!==null&&x!=='')window.pycmd(v+':'+x);};"
         "b.registerCalls({"
         "ankiwebSetRows:function(h,n){document.getElementById('results-body').innerHTML=String(h);"
         "document.getElementById('browser-status').textContent=(n||0)+' cards';"
         "_sel=[];_anchor=null;},"
-        "ankiwebSetDetail:function(h){document.getElementById('detail').innerHTML=String(h);}"
+        "ankiwebSetDetail:function(h){document.getElementById('detail').innerHTML=String(h);},"
+        "ankiwebEditNote:function(nid){window.ankiwebShowEditor(nid);}"
         "});"
         "document.getElementById('results-body').addEventListener('click',function(e){"
         "var tr=e.target.closest('tr');if(tr&&tr.dataset.cid){_click(tr,e);}});"
@@ -203,12 +211,14 @@ def make_browser_handler(service, hub):
             nids, is_io = await service.run(_resolve)
             hub.ui_state.selected_card_ids = cids
             hub.ui_state.selected_note_ids = nids
-            if len(cids) == 1 and nids:
-                src = f"/image-occlusion/{nids[0]}" if is_io else f"/edit?nid={nids[0]}"
-                detail = f"<iframe class='editor-frame' src='{src}'></iframe>"
+            if len(cids) == 1 and nids and not is_io:
+                # reuse the mounted editor iframe (postMessage the nid) — no iframe rebuild
+                await hub.push_call("browser", "ankiwebEditNote", [nids[0]])
+            elif len(cids) == 1 and nids:  # image-occlusion note: a different SPA page
+                detail = f"<iframe class='editor-frame' src='/image-occlusion/{nids[0]}'></iframe>"
+                await hub.push_call("browser", "ankiwebSetDetail", [detail])
             else:
-                detail = ""
-            await hub.push_call("browser", "ankiwebSetDetail", [detail])
+                await hub.push_call("browser", "ankiwebSetDetail", [""])
         elif cmd in ("suspend", "unsuspend", "forget", "delete"):
             cids = list(hub.ui_state.selected_card_ids or [])
             if cids:

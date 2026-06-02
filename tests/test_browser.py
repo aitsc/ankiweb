@@ -66,8 +66,8 @@ def test_browse_open_pushes_detail_and_selection(client):
     hub = client.app.state.hub
     with client.websocket_connect("/ws?context=browser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"open:{cid}"})
-        detail = _drain_call(ws, "ankiwebSetDetail")[0]
-        assert "iframe" in detail and "/edit?nid=" in detail
+        nid = _drain_call(ws, "ankiwebEditNote")[0]   # single-select reuses one editor iframe
+        assert isinstance(nid, int) and nid > 0
     assert hub.ui_state.selected_card_ids == [cid]
     assert len(hub.ui_state.selected_note_ids) == 1
 
@@ -97,12 +97,12 @@ def test_select_then_suspend(client):
     assert all(_run(client, lambda col, c=c: col.get_card(c).queue) == -1 for c in cids)
 
 
-def test_select_one_pushes_detail(client):
+def test_select_one_pushes_editor(client):
     cid = _run(client, lambda col: list(col.find_cards("dog"))[0])
+    nid = _run(client, lambda col: col.get_card(cid).nid)
     with client.websocket_connect("/ws?context=browser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
-        detail = _drain_call(ws, "ankiwebSetDetail")[0]
-        assert "iframe" in detail and "/edit?nid=" in detail
+        assert _drain_call(ws, "ankiwebEditNote")[0] == nid
 
 
 def test_delete_removes_notes(client):
@@ -110,7 +110,7 @@ def test_delete_removes_notes(client):
     before = _run(client, lambda col: len(col.find_notes("")))
     with client.websocket_connect("/ws?context=browser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
-        _drain_call(ws, "ankiwebSetDetail")
+        _drain_call(ws, "ankiwebEditNote")
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "delete"})
         _drain_call(ws, "ankiwebSetRows")
     assert _run(client, lambda col: len(col.find_notes(""))) == before - 1
@@ -120,7 +120,7 @@ def test_changedeck_moves_card(client):
     cid = _run(client, lambda col: list(col.find_cards("dog"))[0])
     with client.websocket_connect("/ws?context=browser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
-        _drain_call(ws, "ankiwebSetDetail")
+        _drain_call(ws, "ankiwebEditNote")
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "changedeck:Spanish"})
         _drain_call(ws, "ankiwebSetRows")
     did = _run(client, lambda col: col.get_card(cid).did)
@@ -132,13 +132,13 @@ def test_add_and_remove_tag(client):
     nid = _run(client, lambda col: col.get_card(cid).nid)
     with client.websocket_connect("/ws?context=browser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
-        _drain_call(ws, "ankiwebSetDetail")
+        _drain_call(ws, "ankiwebEditNote")
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "addtag:marked"})
         _drain_call(ws, "ankiwebSetRows")
     assert "marked" in _run(client, lambda col: col.get_note(nid).tags)
     with client.websocket_connect("/ws?context=browser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
-        _drain_call(ws, "ankiwebSetDetail")
+        _drain_call(ws, "ankiwebEditNote")
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "removetag:marked"})
         _drain_call(ws, "ankiwebSetRows")
     assert "marked" not in _run(client, lambda col: col.get_note(nid).tags)
@@ -148,7 +148,7 @@ def test_setdue_runs(client):
     cid = _run(client, lambda col: list(col.find_cards("dog"))[0])
     with client.websocket_connect("/ws?context=browser") as ws:
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": f"select:{cid}"})
-        _drain_call(ws, "ankiwebSetDetail")
+        _drain_call(ws, "ankiwebEditNote")
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "setdue:0"})
         _drain_call(ws, "ankiwebSetRows")
 
@@ -160,3 +160,20 @@ def test_browse_refresh_repushes_rows(client):
         ws.send_json({"type": "cmd", "id": None, "ctx": "browser", "arg": "refresh"})
         args = _drain_call(ws, "ankiwebSetRows")
         assert "dog" in args[0]
+
+
+def test_browser_reuses_one_editor_iframe(client):
+    # the reuse wiring: a single ankiwebShowEditor that postMessages an existing iframe,
+    # and ankiwebEditNote registered to drive it
+    html = client.get("/browse").text
+    assert "ankiwebShowEditor" in html
+    assert "ankiwebEditNote" in html
+    assert "postMessage" in html and "ankiwebLoadNid" in html
+
+
+def test_editor_listens_for_in_place_note_switch(client):
+    nid = _run(client, lambda col: list(col.find_notes("dog"))[0])
+    html = client.get(f"/edit?nid={nid}").text
+    # editor reloads a note in-place on a parent postMessage (no full editor.js reload)
+    assert "addEventListener('message'" in html
+    assert "ankiwebLoadNid" in html
