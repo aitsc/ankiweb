@@ -37,3 +37,22 @@ def test_sveltekit_spa_fallback(client):
     r = client.get("/_anki/sveltekit/graphs")
     assert r.status_code == 200
     assert "<html" in r.text.lower() or "<!doctype" in r.text.lower()
+
+
+def test_mathjax_font_has_long_cache(client):
+    # MathJax CHTML glyph fonts must be cached hard, else they re-download every card render
+    r = client.get("/_anki/js/vendor/mathjax/output/chtml/fonts/woff-v2/MathJax_Main-Regular.woff")
+    assert r.status_code == 200
+    assert "max-age=31536000" in r.headers.get("cache-control", "")
+
+
+def test_vendored_image_has_long_cache(client):
+    r = client.get("/_anki/imgs/gears.svg")
+    if r.status_code == 200:
+        assert "max-age=31536000" in r.headers.get("cache-control", "")
+
+
+def test_js_not_pinned(client):
+    # js stays revalidate-able (changes on an anki re-vendor)
+    r = client.get("/_anki/js/reviewer.js")
+    assert r.headers.get("cache-control", "") == "max-age=0"

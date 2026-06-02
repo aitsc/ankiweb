@@ -30,6 +30,12 @@ SVELTEKIT_PAGES = {"graphs", "congrats", "card-info", "change-notetype", "deck-o
                    "import-anki-package", "import-csv", "import-page", "image-occlusion"}
 
 
+# vendored binary assets that are content-stable across the pinned anki version: cache hard.
+# (fonts are the big one — MathJax CHTML lazy-loads ~dozens of woff glyph files per render.)
+_STATIC_ASSET_EXTS = {"woff", "woff2", "ttf", "otf", "eot",
+                      "svg", "png", "jpg", "jpeg", "gif", "webp", "ico"}
+
+
 def _mime(path: str) -> str:
     ext = "." + path.rsplit(".", 1)[-1].lower() if "." in path else ""
     return MIME.get(ext, "application/octet-stream")
@@ -74,11 +80,18 @@ def build_router(assets_dir: Path) -> APIRouter:
             return PlainTextResponse("not found", status_code=404)
 
         headers = {}
+        ext = rel.rsplit(".", 1)[-1].lower() if "." in rel else ""
         if "immutable" in rel:
+            headers["Cache-Control"] = "max-age=31536000"
+        elif ext in _STATIC_ASSET_EXTS:
+            # Vendored, version-pinned, content-stable binaries (esp. MathJax's lazily-loaded
+            # CHTML glyph fonts). Without a cache header the browser re-downloads them FULLY on
+            # every card render -> slow card switches. They never change at runtime.
             headers["Cache-Control"] = "max-age=31536000"
         elif rel.endswith(".css"):
             headers["Cache-Control"] = "max-age=10"
         elif rel.endswith(".js"):
+            # js can change on an anki version re-vendor -> revalidate via etag (304), don't pin
             headers["Cache-Control"] = "max-age=0"
         return FileResponse(target, media_type=_mime(rel), headers=headers)
 
