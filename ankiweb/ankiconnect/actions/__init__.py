@@ -1,2 +1,2 @@
 # Importing the action modules registers their handlers in the ACTIONS registry.
-from ankiweb.ankiconnect.actions import meta, decks, notes, cards, models, media, gui, import_export  # noqa: F401
+from ankiweb.ankiconnect.actions import meta, decks, notes, cards, models, media, gui, import_export, stats  # noqa: F401
