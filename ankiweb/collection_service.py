@@ -42,6 +42,8 @@ class CollectionService:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         def _open() -> Collection:
+            import anki.lang
+            anki.lang.set_lang(self._settings.lang or "en")
             return Collection(str(path), server=False)
 
         loop = asyncio.get_running_loop()
