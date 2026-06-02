@@ -93,6 +93,12 @@ def build_sveltekit_router(assets_dir: Path) -> APIRouter:
     def change_notetype_page(ids: str) -> Response:
         return FileResponse(index, media_type="text/html")
 
+    @router.get("/card-info/{ids:path}")
+    def card_info_page(ids: str) -> Response:
+        # SvelteKit route nodes: /card-info/[cardId] and /card-info/[cardId]/[previousId].
+        # Bundle is vendored; card_stats / get_review_logs are already PASSTHROUGH RPCs.
+        return FileResponse(index, media_type="text/html")
+
     @router.get("/import-csv/{path:path}")
     def import_csv_page(path: str) -> Response:
         return FileResponse(index, media_type="text/html")
