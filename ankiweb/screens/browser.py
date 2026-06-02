@@ -2,6 +2,8 @@ from __future__ import annotations
 import html
 import re
 
+from ankiweb.i18n import tr
+
 _TAG_STRIP = re.compile(r"<[^>]+>")
 _LIMIT = 500
 
@@ -29,12 +31,12 @@ _STYLE = (
 
 
 def _sidebar_html(col) -> str:
-    parts = ["<div class='side-section'>Decks</div>"]
+    parts = [f"<div class='side-section'>{tr.actions_decks()}</div>"]
     for d in col.decks.all_names_and_ids():
         parts.append(
             f"<a class='side-item' href='#' onclick=\"return pycmd('searchdeck:{d.id}')\">"
             f"{html.escape(d.name)}</a>")
-    parts.append("<div class='side-section'>Tags</div>")
+    parts.append(f"<div class='side-section'>{tr.editing_tags()}</div>")
     for t in col.tags.all():
         parts.append(
             f"<a class='side-item' href='#' onclick=\"return pycmd('searchtag:{html.escape(t)}')\">"
@@ -51,19 +53,19 @@ def render_browser_html(col) -> str:
         "onkeydown=\"if(event.key==='Enter'){window.pycmd('search:'+this.value);}\">"
         "<span id='browser-status'></span>"
         "<div id='browser-actions'>"
-        "<button onclick=\"ankiwebAct('suspend')\">Suspend</button>"
+        f"<button onclick=\"ankiwebAct('suspend')\">{tr.studying_suspend()}</button>"
         "<button onclick=\"ankiwebAct('unsuspend')\">Unsuspend</button>"
-        "<button onclick=\"ankiwebAct('forget')\">Forget</button>"
+        f"<button onclick=\"ankiwebAct('forget')\">{tr.actions_forget_card()}</button>"
         "<button onclick=\"ankiwebActP('setdue','Due in days (e.g. 0, 3, 1-7):')\">Set Due</button>"
-        "<button onclick=\"ankiwebActP('changedeck','Move to deck:')\">Change Deck</button>"
+        f"<button onclick=\"ankiwebActP('changedeck','Move to deck:')\">{tr.browsing_change_deck()}</button>"
         "<button onclick=\"ankiwebActP('addtag','Add tag:')\">Add Tag</button>"
-        "<button onclick=\"ankiwebActP('removetag','Remove tag:')\">Remove Tag</button>"
-        "<button onclick=\"if(confirm('Delete selected notes?'))ankiwebAct('delete')\">Delete</button>"
+        f"<button onclick=\"ankiwebActP('removetag','Remove tag:')\">{tr.actions_remove_tag()}</button>"
+        f"<button onclick=\"if(confirm('Delete selected notes?'))ankiwebAct('delete')\">{tr.actions_delete()}</button>"
         "</div></div>"
         "<div id='browser-main'>"
         f"<div id='sidebar'>{_sidebar_html(col)}</div>"
         "<div id='results-wrap'><table id='results'>"
-        "<thead><tr><th>Sort Field</th><th>Deck</th><th>Due</th></tr></thead>"
+        f"<thead><tr><th>{tr.browsing_sort_field()}</th><th>{tr.decks_deck()}</th><th>{tr.statistics_due_date()}</th></tr></thead>"
         "<tbody id='results-body'></tbody></table></div>"
         "<div id='detail'></div>"
         "</div></div>"
@@ -135,8 +137,8 @@ def _detail_html(col, cid) -> str:
         f"<div class='fldval'>{note.fields[i]}</div></div>"
         for i, f in enumerate(model["flds"]))
     tags = html.escape(" ".join(note.tags))
-    return (f"<div class='detail-meta'><b>Deck:</b> {html.escape(col.decks.name(card.did))}"
-            f" &nbsp; <b>Tags:</b> {tags}</div>{flds}")
+    return (f"<div class='detail-meta'><b>{tr.decks_deck()}:</b> {html.escape(col.decks.name(card.did))}"
+            f" &nbsp; <b>{tr.editing_tags()}:</b> {tags}</div>{flds}")
 
 
 def make_browser_handler(service, hub):
