@@ -38,6 +38,9 @@ class Settings:
     # UI language chosen at startup (Anki locale code, e.g. "zh-CN", "ja"). Empty = English.
     # Applied by CollectionService.open() via anki.lang.set_lang(); there is no in-UI switcher.
     lang: str = ""
+    # Optional web-UI password. Empty = no gate (open, the default). When set, the web app
+    # requires a /login session cookie; the AnkiConnect server keeps its own apiKey.
+    password: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -51,4 +54,5 @@ class Settings:
                 h.strip() for h in os.environ.get("ANKIWEB_ALLOWED_HOSTS", "").split(",") if h.strip()),
             source_url=os.environ.get("ANKIWEB_SOURCE_URL", ""),
             lang=os.environ.get("ANKIWEB_LANG", ""),
+            password=os.environ.get("ANKIWEB_PASSWORD", ""),
         )

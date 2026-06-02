@@ -79,6 +79,7 @@ All settings have safe localhost defaults; override via environment variables:
 | `ANKIWEB_AC_KEY` | *(none)* | AnkiConnect `apiKey` (overrides `ankiconnect.json`). |
 | `ANKIWEB_IMPORT_TMP_DIR` | `<collection dir>/import-tmp` | Where uploaded import/image files are staged before the backend reads them. |
 | `ANKIWEB_LANG` | *(empty → English)* | UI language, an Anki locale code (e.g. `zh-CN`, `ja`, `de`, `fr`). Chosen at startup — there is no in-app switcher; changing it means changing this var and restarting. See **Language** below. |
+| `ANKIWEB_PASSWORD` | *(empty → no password)* | If set, the web UI requires this password (a `/login` page sets a session cookie). Empty = open, the default. The AnkiConnect API keeps its own `ANKIWEB_AC_KEY`. |
 | `ANKIWEB_SOURCE_URL` | *(empty)* | AGPL §13 Corresponding-Source location for this deployment, shown on the `/about` page (only relevant if you run it as a public network service). |
 
 **`ankiconnect.json`** (optional) lives next to the collection file and uses AnkiConnect's
@@ -116,6 +117,20 @@ ANKIWEB_LANG=zh-CN conda run -n ankiweb python -m ankiweb
 The language is fixed at startup (it's applied before the collection is opened); there is
 no in-app language switcher, so to change it you set `ANKIWEB_LANG` and restart. Empty or an
 unknown code falls back to English. Accepts both `zh-CN` and `zh_CN` forms.
+
+### Password
+
+By default the web UI is open (no login) — it's a single-user, local-first app. To require a
+password, set `ANKIWEB_PASSWORD`:
+
+```bash
+ANKIWEB_PASSWORD=mysecret conda run -n ankiweb python -m ankiweb
+```
+
+Visitors then get a `/login` page; the correct password sets an httponly session cookie and
+unlocks the UI (and the `/ws` bridge). `/logout` clears it. This gates the **web app only**;
+the AnkiConnect HTTP API (port 8765) is controlled separately by `ANKIWEB_AC_KEY`. It's a
+light gate for LAN use, not a hardened auth system — serve over HTTPS if it matters.
 
 ### Night mode
 

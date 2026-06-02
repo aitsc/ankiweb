@@ -1,16 +1,20 @@
 from __future__ import annotations
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from ankiweb.config import host_allowed
+from ankiweb.auth import COOKIE, cookie_ok
 
 
-def build_router(get_hub, allowed_hosts=()) -> APIRouter:
+def build_router(get_hub, allowed_hosts=(), password="") -> APIRouter:
     router = APIRouter()
 
     @router.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket, context: str = "default"):
-        # BaseHTTPMiddleware host_guard does NOT cover WS upgrades — check here too.
+        # BaseHTTPMiddleware (host + auth guards) does NOT cover WS upgrades — check here too.
         host = websocket.headers.get("host", "")
         if not host_allowed(host, allowed_hosts):
+            await websocket.close(code=1008)
+            return
+        if not cookie_ok(websocket.cookies.get(COOKIE), password):
             await websocket.close(code=1008)
             return
         hub = get_hub()
