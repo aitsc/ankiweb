@@ -1,6 +1,7 @@
 from __future__ import annotations
 import html
 import json
+from ankiweb.i18n import tr
 from ankiweb.screens.editor import _munge, paste_handler_js
 from ankiweb.ankiconnect.actions._helpers import check_addable
 from ankiweb.collection_service import op_changes_to_flags
@@ -52,12 +53,12 @@ def add_page_body(deck_opts: str, nt_opts: str) -> str:
     return (
         _STYLE +
         "<div id='add-chrome'>"
-        "<label>Deck <select id='add-deck' "
+        f"<label>{tr.decks_deck()} <select id='add-deck' "
         "onchange=\"window.pycmd('setdeck:'+this.value)\">" + deck_opts + "</select></label>"
-        "<label>Type <select id='add-notetype' "
+        f"<label>{tr.notetypes_type()} <select id='add-notetype' "
         "onchange=\"window.pycmd('setnotetype:'+this.value)\">" + nt_opts + "</select></label>"
-        "<button id='add-btn' onclick='ankiwebAddNote()'>Add Note</button>"
-        "<a href='/deckbrowser'>Close</a><span id='add-toast'></span>"
+        f"<button id='add-btn' onclick='ankiwebAddNote()'>{tr.actions_add_note()}</button>"
+        f"<a href='/deckbrowser'>{tr.actions_close()}</a><span id='add-toast'></span>"
         "</div>"
         "<script>(function(){"
         "window.setupEditor('add');"
@@ -144,7 +145,7 @@ def make_add_handler(service, hub):
             else:
                 data = await service.run(lambda col: _empty_load(col, ntid))
                 await hub.push_call("add", "ankiwebLoadNote", [data])
-                await hub.push_call("add", "ankiwebToast", ["Added"])
+                await hub.push_call("add", "ankiwebToast", [tr.adding_added()])
         return None
 
     return handler
