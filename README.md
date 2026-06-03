@@ -23,6 +23,36 @@ filtered-deck, export) are rebuilt as small server-rendered pages.
 
 ---
 
+## Screenshots
+
+**Deck browser** — your full deck tree (including nested decks), counts, and the always-present
+top toolbar. Anki's home screen, in a browser tab.
+
+![Deck browser](docs/images/home.png)
+
+**Studying** — the real Anki reviewer (`reviewer.js` + MathJax) drives the card; ankiweb adds a
+card-action bar (mark · bury · suspend · set due · reset · delete · undo · flags) and keyboard
+shortcuts.
+
+![Reviewer](docs/images/reviewer.png)
+
+**Browse & edit** — search, a deck/tag sidebar, the results table, and Anki's real `editor.js`
+embedded live in the detail pane (with Fields… / Cards… / Preview).
+
+![Browser](docs/images/browser.png)
+
+**Reused, not rewritten** — where Anki ships a compiled SvelteKit page, ankiweb serves the
+vendored build and wires it to the backend. Here's the full Deck Options screen, unchanged:
+
+![Deck options](docs/images/deck_options.png)
+
+**Manage Note Types** — list / add / rename / delete note types, with links into the field and
+card-template editors (one of the Tools-menu screens ankiweb rebuilds for the web):
+
+![Manage note types](docs/images/notetypes.png)
+
+---
+
 ## Requirements
 
 - Python **3.12**
