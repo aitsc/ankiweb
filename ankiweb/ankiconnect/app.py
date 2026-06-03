@@ -42,6 +42,7 @@ def create_ankiconnect_app(
     service: CollectionService | None = None,
     config: AnkiConnectConfig | None = None,
     hub=None,
+    notifier=None,
 ) -> FastAPI:
     settings = settings or Settings.from_env()
     config = config or AnkiConnectConfig()
@@ -57,6 +58,7 @@ def create_ankiconnect_app(
         app.state.service = svc
         app.state.config = config
         app.state.hub = hub
+        app.state.notifier = notifier  # shared NotifierState (None if not wired, e.g. tests)
         try:
             yield
         finally:

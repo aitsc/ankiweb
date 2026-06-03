@@ -6,7 +6,7 @@ from __future__ import annotations
 import html
 import time
 
-from ankiweb.notifier import NotifyConfig
+from ankiweb.notifier import NotifyConfig, header_safe  # header_safe re-exported for routes.py
 
 
 def config_from_form(enabled: bool, url: str, token: str,
@@ -19,16 +19,6 @@ def config_from_form(enabled: bool, url: str, token: str,
 
 def _fmt_ts(ts) -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "—"
-
-
-def header_safe(token: str) -> bool:
-    """A Bearer token must be encodable into an HTTP header (latin-1), or httpx raises on
-    every send — a forever-failing config. Reject such tokens at save time."""
-    try:
-        ("Bearer " + (token or "")).encode("latin-1")
-        return True
-    except UnicodeEncodeError:
-        return False
 
 
 def _num(v) -> str:

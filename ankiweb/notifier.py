@@ -94,6 +94,16 @@ def learnable(counts: dict) -> bool:
             + counts.get("review_count", 0)) > 0
 
 
+def header_safe(token: str) -> bool:
+    """A Bearer token must be encodable into an HTTP header (latin-1), or httpx raises on
+    every send — a forever-failing config. Used to reject such tokens at config-set time."""
+    try:
+        ("Bearer " + (token or "")).encode("latin-1")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
 def counts_sig(counts: dict) -> tuple:
     """The (new, learn, review) tuple — the value a deck's notification state is keyed on.
     A change in ANY of the three (incl. bucket shifts that keep the total) triggers a notify."""
