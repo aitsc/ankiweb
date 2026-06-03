@@ -1,16 +1,23 @@
 """AnkiConnect card actions."""
 from __future__ import annotations
+from typing import Optional
 from anki.errors import NotFoundError
 from ankiweb.ankiconnect.registry import action
 from ankiweb.ankiconnect.actions._helpers import card_to_info, run_emit
+from ankiweb.ankiconnect.schemas.cards import (
+    FindCardsParams, CardsInfoParams, CardsModTimeParams, SuspendParams, UnsuspendParams,
+    SuspendedParams, AreSuspendedParams, AreDueParams, GetEaseFactorsParams, SetEaseFactorsParams,
+    SetSpecificValueOfCardParams, GetIntervalsParams, ForgetCardsParams, RelearnCardsParams,
+    AnswerCardsParams, SetDueDateParams,
+)
 
 
-@action("findCards")
+@action("findCards", params=FindCardsParams, returns=list[int], summary="Find card ids by query")
 async def find_cards(rt, query=""):
     return await rt.service.run(lambda col: list(col.find_cards(query or "")))
 
 
-@action("cardsInfo")
+@action("cardsInfo", params=CardsInfoParams, summary="Full info for each card")
 async def cards_info(rt, cards=None):
     cards = cards or []
 
@@ -25,7 +32,7 @@ async def cards_info(rt, cards=None):
     return await rt.service.run(fn)
 
 
-@action("cardsModTime")
+@action("cardsModTime", params=CardsModTimeParams, summary="Modification time of each card")
 async def cards_mod_time(rt, cards=None):
     cards = cards or []
 
@@ -40,7 +47,7 @@ async def cards_mod_time(rt, cards=None):
     return await rt.service.run(fn)
 
 
-@action("suspend")
+@action("suspend", params=SuspendParams, returns=bool, summary="Suspend/unsuspend cards")
 async def suspend(rt, cards=None, suspend=True):
     cards = cards or []
 
@@ -50,7 +57,7 @@ async def suspend(rt, cards=None, suspend=True):
     return await run_emit(rt, fn)
 
 
-@action("unsuspend")
+@action("unsuspend", params=UnsuspendParams, summary="Unsuspend cards")
 async def unsuspend(rt, cards=None):
     cards = cards or []
 
@@ -60,12 +67,13 @@ async def unsuspend(rt, cards=None):
     return None
 
 
-@action("suspended")
+@action("suspended", params=SuspendedParams, returns=bool, summary="Is a card suspended")
 async def suspended(rt, card=None):
     return await rt.service.run(lambda col: col.get_card(card).queue == -1)
 
 
-@action("areSuspended")
+@action("areSuspended", params=AreSuspendedParams, returns=list[Optional[bool]],
+        summary="Per-card suspended state")
 async def are_suspended(rt, cards=None):
     cards = cards or []
 
@@ -80,7 +88,7 @@ async def are_suspended(rt, cards=None):
     return await rt.service.run(fn)
 
 
-@action("areDue")
+@action("areDue", params=AreDueParams, returns=list[bool], summary="Per-card due flag")
 async def are_due(rt, cards=None):
     cards = cards or []
     return await rt.service.run(
@@ -88,7 +96,8 @@ async def are_due(rt, cards=None):
                      cid in set(col.find_cards("is:new")) for cid in cards])
 
 
-@action("getEaseFactors")
+@action("getEaseFactors", params=GetEaseFactorsParams, returns=list[Optional[int]],
+        summary="Per-card ease factor")
 async def get_ease_factors(rt, cards=None):
     cards = cards or []
 
@@ -103,7 +112,8 @@ async def get_ease_factors(rt, cards=None):
     return await rt.service.run(fn)
 
 
-@action("setEaseFactors")
+@action("setEaseFactors", params=SetEaseFactorsParams, returns=list[bool],
+        summary="Set per-card ease factor")
 async def set_ease_factors(rt, cards=None, easeFactors=None):
     cards = cards or []
     easeFactors = easeFactors or []
@@ -124,7 +134,8 @@ async def set_ease_factors(rt, cards=None, easeFactors=None):
     return await run_emit(rt, fn)
 
 
-@action("setSpecificValueOfCard")
+@action("setSpecificValueOfCard", params=SetSpecificValueOfCardParams,
+        summary="Set arbitrary card column(s)")
 async def set_specific_value_of_card(rt, card=None, keys=None, newValues=None, warning_check=False):
     keys = keys or []
     newValues = newValues or []
@@ -151,7 +162,7 @@ async def set_specific_value_of_card(rt, card=None, keys=None, newValues=None, w
     return await run_emit(rt, fn)
 
 
-@action("getIntervals")
+@action("getIntervals", params=GetIntervalsParams, summary="Per-card review interval(s)")
 async def get_intervals(rt, cards=None, complete=False):
     cards = cards or []
     if not complete:
@@ -166,7 +177,7 @@ async def get_intervals(rt, cards=None, complete=False):
     return await rt.service.run(fn)
 
 
-@action("forgetCards")
+@action("forgetCards", params=ForgetCardsParams, summary="Reset cards to new")
 async def forget_cards(rt, cards=None):
     cards = cards or []
 
@@ -176,7 +187,7 @@ async def forget_cards(rt, cards=None):
     return None
 
 
-@action("relearnCards")
+@action("relearnCards", params=RelearnCardsParams, summary="Move cards to relearning")
 async def relearn_cards(rt, cards=None):
     cards = cards or []
 
@@ -191,7 +202,8 @@ async def relearn_cards(rt, cards=None):
     return None
 
 
-@action("answerCards")
+@action("answerCards", params=AnswerCardsParams, returns=list[bool],
+        summary="Answer cards as if reviewed")
 async def answer_cards(rt, answers=None):
     from anki.scheduler.v3 import CardAnswer
     answers = answers or []
@@ -218,7 +230,7 @@ async def answer_cards(rt, answers=None):
     return await run_emit(rt, fn)
 
 
-@action("setDueDate")
+@action("setDueDate", params=SetDueDateParams, returns=bool, summary="Reschedule cards to a due date")
 async def set_due_date(rt, cards=None, days="0"):
     cards = cards or []
 

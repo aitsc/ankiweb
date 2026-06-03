@@ -90,7 +90,7 @@ This starts **two servers in one process**:
 | Port | Serves | Default | Configure with |
 |------|--------|---------|----------------|
 | **Web UI + WebSocket** | the browser study/edit UI and the `/ws` bridge (WS shares this port) | `127.0.0.1:8000` | `ANKIWEB_HOST` / `ANKIWEB_PORT` |
-| **AnkiConnect HTTP API** | `POST /` JSON API for AnkiConnect clients | `127.0.0.1:8765` | `ANKIWEB_AC_HOST` / `ANKIWEB_AC_PORT` (or `ankiconnect.json`) |
+| **AnkiConnect HTTP API** | `POST /` JSON API for AnkiConnect clients (+ Swagger docs at [`/docs`](#api-docs-swagger)) | `127.0.0.1:8765` | `ANKIWEB_AC_HOST` / `ANKIWEB_AC_PORT` (or `ankiconnect.json`) |
 
 Open <http://127.0.0.1:8000> in a browser. The AnkiConnect port defaults to **8765** on
 purpose — existing AnkiConnect clients/scripts work unchanged.
@@ -162,6 +162,20 @@ Visitors then get a `/login` page; the correct password sets an httponly session
 unlocks the UI (and the `/ws` bridge). `/logout` clears it. This gates the **web app only**;
 the AnkiConnect HTTP API (port 8765) is controlled separately by `ANKIWEB_AC_KEY`. It's a
 light gate for LAN use, not a hardened auth system — serve over HTTPS if it matters.
+
+### API docs (Swagger)
+
+The AnkiConnect server publishes interactive OpenAPI docs at
+<http://127.0.0.1:8765/docs> (schema at `/openapi.json`). Every action has a standard
+Pydantic request schema and a documented `POST /actions/<name>` route you can call straight
+from the page ("Try it out"), e.g. `POST /actions/findCards` with body
+`{"query": "deck:French is:due"}`.
+
+These typed routes are an **additive convenience layer** — the canonical AnkiConnect contract
+is unchanged: real clients still `POST /` with `{"action", "version", "params"}`, and the
+`/actions/*` routes call the exact same dispatcher, so behavior never diverges. When
+`ANKIWEB_AC_KEY` is set, send it as the `X-API-Key` header (use the **Authorize** button in
+Swagger); the canonical `POST /` keeps reading the key from the request body as upstream does.
 
 ### Night mode
 

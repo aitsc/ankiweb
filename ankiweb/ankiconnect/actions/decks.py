@@ -1,5 +1,10 @@
 from __future__ import annotations
 from ankiweb.ankiconnect.registry import action
+from ankiweb.ankiconnect.schemas.decks import (
+    DeckNamesParams, DeckNamesAndIdsParams, GetDecksParams, CreateDeckParams, ChangeDeckParams,
+    DeleteDecksParams, GetDeckConfigParams, SaveDeckConfigParams, SetDeckConfigIdParams,
+    CloneDeckConfigIdParams, RemoveDeckConfigIdParams, GetDeckStatsParams, DeckNameFromIdParams,
+)
 
 
 def _config_exists(col, conf_id) -> bool:
@@ -13,18 +18,18 @@ def _config_exists(col, conf_id) -> bool:
     return c is not None and int(c["id"]) == int(conf_id)
 
 
-@action("deckNames")
+@action("deckNames", params=DeckNamesParams, returns=list[str], summary="List all deck names")
 async def deck_names(rt):
     return await rt.service.run(lambda col: [d.name for d in col.decks.all_names_and_ids()])
 
 
-@action("deckNamesAndIds")
+@action("deckNamesAndIds", params=DeckNamesAndIdsParams, summary="Map deck names to ids")
 async def deck_names_and_ids(rt):
     return await rt.service.run(
         lambda col: {d.name: d.id for d in col.decks.all_names_and_ids()})
 
 
-@action("getDecks")
+@action("getDecks", params=GetDecksParams, summary="Group cards by deck")
 async def get_decks(rt, cards=None):
     cards = cards or []
 
@@ -41,13 +46,13 @@ async def get_decks(rt, cards=None):
     return await rt.service.run(fn)
 
 
-@action("createDeck")
+@action("createDeck", params=CreateDeckParams, returns=int, summary="Create a deck")
 async def create_deck(rt, deck=None):
     # get-or-create; returns the deck id (AnkiConnect semantics)
     return await rt.service.run(lambda col: col.decks.id(deck))
 
 
-@action("changeDeck")
+@action("changeDeck", params=ChangeDeckParams, summary="Move cards to a deck")
 async def change_deck(rt, cards=None, deck=None):
     cards = cards or []
 
@@ -58,7 +63,7 @@ async def change_deck(rt, cards=None, deck=None):
     return None
 
 
-@action("deleteDecks")
+@action("deleteDecks", params=DeleteDecksParams, summary="Delete decks (and their cards)")
 async def delete_decks(rt, decks=None, cardsToo=False):
     if not cardsToo:
         raise Exception("deleteDecks requires cardsToo=true (ankiweb won't keep orphan cards)")
@@ -72,7 +77,7 @@ async def delete_decks(rt, decks=None, cardsToo=False):
     return None
 
 
-@action("getDeckConfig")
+@action("getDeckConfig", params=GetDeckConfigParams, summary="Get a deck's config group")
 async def get_deck_config(rt, deck=None):
     def fn(col):
         did = col.decks.id_for_name(deck)  # read-only: don't create the deck on a query
@@ -82,7 +87,8 @@ async def get_deck_config(rt, deck=None):
     return await rt.service.run(fn)
 
 
-@action("saveDeckConfig")
+@action("saveDeckConfig", params=SaveDeckConfigParams, returns=bool,
+        summary="Save a deck config group")
 async def save_deck_config(rt, config=None):
     def fn(col):
         if not config or not _config_exists(col, config.get("id")):
@@ -92,7 +98,8 @@ async def save_deck_config(rt, config=None):
     return await rt.service.run(fn)
 
 
-@action("setDeckConfigId")
+@action("setDeckConfigId", params=SetDeckConfigIdParams, returns=bool,
+        summary="Assign a config group to decks")
 async def set_deck_config_id(rt, decks=None, configId=None):
     decks = decks or []
 
@@ -110,7 +117,7 @@ async def set_deck_config_id(rt, decks=None, configId=None):
     return await rt.service.run(fn)
 
 
-@action("cloneDeckConfigId")
+@action("cloneDeckConfigId", params=CloneDeckConfigIdParams, summary="Clone a config group")
 async def clone_deck_config_id(rt, name=None, cloneFrom="1"):
     def fn(col):
         if not _config_exists(col, cloneFrom):
@@ -120,7 +127,8 @@ async def clone_deck_config_id(rt, name=None, cloneFrom="1"):
     return await rt.service.run(fn)
 
 
-@action("removeDeckConfigId")
+@action("removeDeckConfigId", params=RemoveDeckConfigIdParams, returns=bool,
+        summary="Remove a config group")
 async def remove_deck_config_id(rt, configId=None):
     def fn(col):
         # refuse the Default config (id 1 → backend raises) and unknown ids
@@ -131,7 +139,7 @@ async def remove_deck_config_id(rt, configId=None):
     return await rt.service.run(fn)
 
 
-@action("getDeckStats")
+@action("getDeckStats", params=GetDeckStatsParams, summary="Get card/due stats for decks")
 async def get_deck_stats(rt, decks=None):
     names = decks or []
 
@@ -157,6 +165,6 @@ async def get_deck_stats(rt, decks=None):
     return await rt.service.run(fn)
 
 
-@action("deckNameFromId")
+@action("deckNameFromId", params=DeckNameFromIdParams, returns=str, summary="Resolve deck id to name")
 async def deck_name_from_id(rt, deckId=None):
     return await rt.service.run(lambda col: col.decks.name(deckId))

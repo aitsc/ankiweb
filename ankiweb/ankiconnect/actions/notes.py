@@ -1,10 +1,19 @@
 from __future__ import annotations
+from typing import Optional
 from ankiweb.ankiconnect.registry import action
 from ankiweb.ankiconnect.actions._helpers import run_emit, build_note, check_addable
 from ankiweb.ankiconnect.actions.media import attach_media
+from ankiweb.ankiconnect.schemas.notes import (
+    AddNoteParams, CanAddNoteParams, CanAddNoteWithErrorDetailParams, AddNotesParams,
+    CanAddNotesParams, CanAddNotesWithErrorDetailParams, FindNotesParams, NotesInfoParams,
+    UpdateNoteFieldsParams, UpdateNoteTagsParams, GetNoteTagsParams, UpdateNoteParams,
+    UpdateNoteModelParams, AddTagsParams, RemoveTagsParams, GetTagsParams, ClearUnusedTagsParams,
+    ReplaceTagsParams, ReplaceTagsInAllNotesParams, NotesModTimeParams, DeleteNotesParams,
+    RemoveEmptyNotesParams, CardsToNotesParams,
+)
 
 
-@action("addNote")
+@action("addNote", params=AddNoteParams, returns=Optional[int], summary="Create a single note")
 async def add_note(rt, note=None):
     spec = note or {}
 
@@ -20,7 +29,7 @@ async def add_note(rt, note=None):
     return await run_emit(rt, fn)
 
 
-@action("canAddNote")
+@action("canAddNote", params=CanAddNoteParams, returns=bool, summary="Can a note be added")
 async def can_add_note(rt, note=None):
     spec = note or {}
 
@@ -34,7 +43,8 @@ async def can_add_note(rt, note=None):
     return await rt.service.run(fn)
 
 
-@action("canAddNoteWithErrorDetail")
+@action("canAddNoteWithErrorDetail", params=CanAddNoteWithErrorDetailParams,
+        summary="Can a note be added (with error detail)")
 async def can_add_note_with_error_detail(rt, note=None):
     spec = note or {}
 
@@ -48,7 +58,7 @@ async def can_add_note_with_error_detail(rt, note=None):
     return await rt.service.run(fn)
 
 
-@action("addNotes")
+@action("addNotes", params=AddNotesParams, returns=list[int], summary="Create multiple notes")
 async def add_notes(rt, notes=None):
     specs = notes or []
 
@@ -79,17 +89,19 @@ async def add_notes(rt, notes=None):
     return await run_emit(rt, fn)
 
 
-@action("canAddNotes")
+@action("canAddNotes", params=CanAddNotesParams, returns=list[bool],
+        summary="Can each note be added")
 async def can_add_notes(rt, notes=None):
     return [await can_add_note(rt, note=n) for n in (notes or [])]
 
 
-@action("canAddNotesWithErrorDetail")
+@action("canAddNotesWithErrorDetail", params=CanAddNotesWithErrorDetailParams,
+        summary="Can each note be added (with error detail)")
 async def can_add_notes_with_error_detail(rt, notes=None):
     return [await can_add_note_with_error_detail(rt, note=n) for n in (notes or [])]
 
 
-@action("findNotes")
+@action("findNotes", params=FindNotesParams, returns=list[int], summary="Find note ids by query")
 async def find_notes(rt, query=None):
     return await rt.service.run(lambda col: list(col.find_notes(query or "")))
 
@@ -97,7 +109,7 @@ async def find_notes(rt, query=None):
 from ankiweb.ankiconnect.actions._helpers import note_to_info  # noqa: E402
 
 
-@action("notesInfo")
+@action("notesInfo", params=NotesInfoParams, summary="Full info for each note")
 async def notes_info(rt, notes=None, query=None):
     def fn(col):
         ids = list(notes) if notes is not None else list(col.find_notes(query or ""))
@@ -111,7 +123,7 @@ async def notes_info(rt, notes=None, query=None):
     return await rt.service.run(fn)
 
 
-@action("updateNoteFields")
+@action("updateNoteFields", params=UpdateNoteFieldsParams, summary="Update a note's fields")
 async def update_note_fields(rt, note=None):
     spec = note or {}
 
@@ -125,7 +137,7 @@ async def update_note_fields(rt, note=None):
     return None
 
 
-@action("updateNoteTags")
+@action("updateNoteTags", params=UpdateNoteTagsParams, summary="Replace a note's tags")
 async def update_note_tags(rt, note=None, tags=None):
     tags = tags or []
 
@@ -137,12 +149,12 @@ async def update_note_tags(rt, note=None, tags=None):
     return None
 
 
-@action("getNoteTags")
+@action("getNoteTags", params=GetNoteTagsParams, returns=list[str], summary="Get a note's tags")
 async def get_note_tags(rt, note=None):
     return await rt.service.run(lambda col: list(col.get_note(note).tags))
 
 
-@action("updateNote")
+@action("updateNote", params=UpdateNoteParams, summary="Update a note's fields and/or tags")
 async def update_note(rt, note=None):
     spec = note or {}
     if "fields" not in spec and "tags" not in spec:
@@ -154,7 +166,8 @@ async def update_note(rt, note=None):
     return None
 
 
-@action("updateNoteModel")
+@action("updateNoteModel", params=UpdateNoteModelParams,
+        summary="Reassign a note's model, fields and tags")
 async def update_note_model(rt, note=None):
     # Reassign a note's notetype + fields/tags. Minimal: change mid, rebuild fields by name.
     spec = note or {}
@@ -178,7 +191,7 @@ async def update_note_model(rt, note=None):
     return None
 
 
-@action("addTags")
+@action("addTags", params=AddTagsParams, summary="Add tags to notes")
 async def add_tags(rt, notes=None, tags=None, add=True):
     notes = notes or []
 
@@ -188,7 +201,7 @@ async def add_tags(rt, notes=None, tags=None, add=True):
     return None
 
 
-@action("removeTags")
+@action("removeTags", params=RemoveTagsParams, summary="Remove tags from notes")
 async def remove_tags(rt, notes=None, tags=None):
     notes = notes or []
 
@@ -198,12 +211,12 @@ async def remove_tags(rt, notes=None, tags=None):
     return None
 
 
-@action("getTags")
+@action("getTags", params=GetTagsParams, returns=list[str], summary="List all tags")
 async def get_tags(rt):
     return await rt.service.run(lambda col: col.tags.all())
 
 
-@action("clearUnusedTags")
+@action("clearUnusedTags", params=ClearUnusedTagsParams, summary="Remove unused tags")
 async def clear_unused_tags(rt):
     def fn(col):
         return None, col.tags.clear_unused_tags()
@@ -211,7 +224,7 @@ async def clear_unused_tags(rt):
     return None
 
 
-@action("replaceTags")
+@action("replaceTags", params=ReplaceTagsParams, summary="Replace a tag on notes")
 async def replace_tags(rt, notes=None, tag_to_replace=None, replace_with_tag=None):
     notes = notes or []
 
@@ -226,7 +239,8 @@ async def replace_tags(rt, notes=None, tag_to_replace=None, replace_with_tag=Non
     return None
 
 
-@action("replaceTagsInAllNotes")
+@action("replaceTagsInAllNotes", params=ReplaceTagsInAllNotesParams,
+        summary="Replace a tag across all notes")
 async def replace_tags_in_all_notes(rt, tag_to_replace=None, replace_with_tag=None):
     def fn(col):
         return None, col.tags.rename(tag_to_replace, replace_with_tag)
@@ -234,7 +248,7 @@ async def replace_tags_in_all_notes(rt, tag_to_replace=None, replace_with_tag=No
     return None
 
 
-@action("notesModTime")
+@action("notesModTime", params=NotesModTimeParams, summary="Modification time of each note")
 async def notes_mod_time(rt, notes=None):
     notes = notes or []
 
@@ -249,7 +263,7 @@ async def notes_mod_time(rt, notes=None):
     return await rt.service.run(fn)
 
 
-@action("deleteNotes")
+@action("deleteNotes", params=DeleteNotesParams, summary="Delete notes")
 async def delete_notes(rt, notes=None):
     notes = notes or []
 
@@ -259,7 +273,7 @@ async def delete_notes(rt, notes=None):
     return None
 
 
-@action("removeEmptyNotes")
+@action("removeEmptyNotes", params=RemoveEmptyNotesParams, summary="Remove empty notes")
 async def remove_empty_notes(rt):
     def fn(col):
         report = col.get_empty_cards()
@@ -272,7 +286,8 @@ async def remove_empty_notes(rt):
     return None
 
 
-@action("cardsToNotes")
+@action("cardsToNotes", params=CardsToNotesParams, returns=list[int],
+        summary="Map card ids to note ids")
 async def cards_to_notes(rt, cards=None):
     cards = cards or []
 

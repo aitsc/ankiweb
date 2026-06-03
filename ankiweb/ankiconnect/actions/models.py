@@ -2,6 +2,17 @@ from __future__ import annotations
 import re
 from ankiweb.ankiconnect.registry import action
 from ankiweb.ankiconnect.actions._helpers import run_emit
+from ankiweb.ankiconnect.schemas.models import (
+    ModelNamesParams, ModelNamesAndIdsParams, ModelFieldNamesParams,
+    ModelFieldDescriptionsParams, ModelFieldFontsParams, ModelTemplatesParams,
+    ModelStylingParams, ModelFieldsOnTemplatesParams, FindModelsByIdParams,
+    FindModelsByNameParams, ModelNameFromIdParams, CreateModelParams,
+    UpdateModelTemplatesParams, UpdateModelStylingParams, FindAndReplaceInModelsParams,
+    ModelTemplateAddParams, ModelTemplateRemoveParams, ModelTemplateRenameParams,
+    ModelTemplateRepositionParams, ModelFieldAddParams, ModelFieldRemoveParams,
+    ModelFieldRenameParams, ModelFieldRepositionParams, ModelFieldSetFontParams,
+    ModelFieldSetFontSizeParams, ModelFieldSetDescriptionParams,
+)
 
 _FIELD_REF = re.compile(r"\{\{[#/^]?(?:[a-zA-Z0-9_-]+:)*([^{}:#/^]+?)\}\}")
 
@@ -13,30 +24,35 @@ def _model_or_raise(col, name):
     return m
 
 
-@action("modelNames")
+@action("modelNames", params=ModelNamesParams, returns=list[str],
+        summary="List all note type names")
 async def model_names(rt):
     return await rt.service.run(lambda col: [m.name for m in col.models.all_names_and_ids()])
 
 
-@action("modelNamesAndIds")
+@action("modelNamesAndIds", params=ModelNamesAndIdsParams,
+        summary="Map note type names to ids")
 async def model_names_and_ids(rt):
     return await rt.service.run(
         lambda col: {m.name: m.id for m in col.models.all_names_and_ids()})
 
 
-@action("modelFieldNames")
+@action("modelFieldNames", params=ModelFieldNamesParams, returns=list[str],
+        summary="List a note type's field names")
 async def model_field_names(rt, modelName=None):
     return await rt.service.run(
         lambda col: [f["name"] for f in _model_or_raise(col, modelName)["flds"]])
 
 
-@action("modelFieldDescriptions")
+@action("modelFieldDescriptions", params=ModelFieldDescriptionsParams, returns=list[str],
+        summary="List a note type's field descriptions")
 async def model_field_descriptions(rt, modelName=None):
     return await rt.service.run(
         lambda col: [f.get("description", "") for f in _model_or_raise(col, modelName)["flds"]])
 
 
-@action("modelFieldFonts")
+@action("modelFieldFonts", params=ModelFieldFontsParams,
+        summary="Map a note type's fields to font and size")
 async def model_field_fonts(rt, modelName=None):
     def fn(col):
         return {f["name"]: {"font": f.get("font", "Arial"), "size": f.get("size", 20)}
@@ -44,7 +60,8 @@ async def model_field_fonts(rt, modelName=None):
     return await rt.service.run(fn)
 
 
-@action("modelTemplates")
+@action("modelTemplates", params=ModelTemplatesParams,
+        summary="Get a note type's template contents")
 async def model_templates(rt, modelName=None):
     def fn(col):
         return {t["name"]: {"Front": t["qfmt"], "Back": t["afmt"]}
@@ -52,12 +69,14 @@ async def model_templates(rt, modelName=None):
     return await rt.service.run(fn)
 
 
-@action("modelStyling")
+@action("modelStyling", params=ModelStylingParams,
+        summary="Get a note type's CSS styling")
 async def model_styling(rt, modelName=None):
     return await rt.service.run(lambda col: {"css": _model_or_raise(col, modelName)["css"]})
 
 
-@action("modelFieldsOnTemplates")
+@action("modelFieldsOnTemplates", params=ModelFieldsOnTemplatesParams,
+        summary="List fields referenced on each template")
 async def model_fields_on_templates(rt, modelName=None):
     def _refs(fmt):  # field refs, minus the FrontSide special token
         return [r for r in _FIELD_REF.findall(fmt) if r != "FrontSide"]
@@ -72,7 +91,8 @@ async def model_fields_on_templates(rt, modelName=None):
     return await rt.service.run(fn)
 
 
-@action("findModelsById")
+@action("findModelsById", params=FindModelsByIdParams,
+        summary="Get full model dicts by id")
 async def find_models_by_id(rt, modelIds=None):
     modelIds = modelIds or []
 
@@ -87,7 +107,8 @@ async def find_models_by_id(rt, modelIds=None):
     return await rt.service.run(fn)
 
 
-@action("findModelsByName")
+@action("findModelsByName", params=FindModelsByNameParams,
+        summary="Get full model dicts by name")
 async def find_models_by_name(rt, modelNames=None):
     modelNames = modelNames or []
 
@@ -102,7 +123,8 @@ async def find_models_by_name(rt, modelNames=None):
     return await rt.service.run(fn)
 
 
-@action("modelNameFromId")
+@action("modelNameFromId", params=ModelNameFromIdParams, returns=str,
+        summary="Get a note type name from its id")
 async def model_name_from_id(rt, modelId=None):
     def fn(col):
         m = col.models.get(int(modelId))
@@ -112,7 +134,7 @@ async def model_name_from_id(rt, modelId=None):
     return await rt.service.run(fn)
 
 
-@action("createModel")
+@action("createModel", params=CreateModelParams, summary="Create a new note type")
 async def create_model(rt, modelName=None, inOrderFields=None, cardTemplates=None,
                        css=None, isCloze=False):
     inOrderFields = inOrderFields or []
@@ -143,7 +165,8 @@ async def create_model(rt, modelName=None, inOrderFields=None, cardTemplates=Non
     return await run_emit(rt, fn)
 
 
-@action("updateModelTemplates")
+@action("updateModelTemplates", params=UpdateModelTemplatesParams,
+        summary="Update a note type's templates")
 async def update_model_templates(rt, model=None):
     model = model or {}
 
@@ -162,7 +185,8 @@ async def update_model_templates(rt, model=None):
     return None
 
 
-@action("updateModelStyling")
+@action("updateModelStyling", params=UpdateModelStylingParams,
+        summary="Update a note type's CSS styling")
 async def update_model_styling(rt, model=None):
     model = model or {}
 
@@ -174,7 +198,8 @@ async def update_model_styling(rt, model=None):
     return None
 
 
-@action("findAndReplaceInModels")
+@action("findAndReplaceInModels", params=FindAndReplaceInModelsParams, returns=int,
+        summary="Find and replace text across note type templates")
 async def find_and_replace_in_models(rt, modelName=None, findText=None, replaceText=None,
                                      front=True, back=True, css=True):
     # Reference returns the number of MODELS updated (ref 1328-1353), not the
@@ -222,7 +247,8 @@ def _template_or_raise(m, name):
     raise Exception("template was not found: " + str(name))
 
 
-@action("modelTemplateAdd")
+@action("modelTemplateAdd", params=ModelTemplateAddParams,
+        summary="Add a template to a note type")
 async def model_template_add(rt, modelName=None, template=None):
     template = template or {}
     name = template["Name"]   # ref requires Name/Front/Back (1377-1397); KeyError if absent
@@ -245,7 +271,8 @@ async def model_template_add(rt, modelName=None, template=None):
     return None
 
 
-@action("modelTemplateRemove")
+@action("modelTemplateRemove", params=ModelTemplateRemoveParams,
+        summary="Remove a template from a note type")
 async def model_template_remove(rt, modelName=None, templateName=None):
     def fn(col):
         m = _model_or_raise(col, modelName)
@@ -255,7 +282,8 @@ async def model_template_remove(rt, modelName=None, templateName=None):
     return None
 
 
-@action("modelTemplateRename")
+@action("modelTemplateRename", params=ModelTemplateRenameParams,
+        summary="Rename a note type's template")
 async def model_template_rename(rt, modelName=None, oldTemplateName=None, newTemplateName=None):
     def fn(col):
         m = _model_or_raise(col, modelName)
@@ -265,7 +293,8 @@ async def model_template_rename(rt, modelName=None, oldTemplateName=None, newTem
     return None
 
 
-@action("modelTemplateReposition")
+@action("modelTemplateReposition", params=ModelTemplateRepositionParams,
+        summary="Reposition a note type's template")
 async def model_template_reposition(rt, modelName=None, templateName=None, index=None):
     def fn(col):
         m = _model_or_raise(col, modelName)
@@ -275,7 +304,8 @@ async def model_template_reposition(rt, modelName=None, templateName=None, index
     return None
 
 
-@action("modelFieldAdd")
+@action("modelFieldAdd", params=ModelFieldAddParams,
+        summary="Add a field to a note type")
 async def model_field_add(rt, modelName=None, fieldName=None, index=None):
     def fn(col):
         m = _model_or_raise(col, modelName)
@@ -288,7 +318,8 @@ async def model_field_add(rt, modelName=None, fieldName=None, index=None):
     return None
 
 
-@action("modelFieldRemove")
+@action("modelFieldRemove", params=ModelFieldRemoveParams,
+        summary="Remove a field from a note type")
 async def model_field_remove(rt, modelName=None, fieldName=None):
     def fn(col):
         m = _model_or_raise(col, modelName)
@@ -298,7 +329,8 @@ async def model_field_remove(rt, modelName=None, fieldName=None):
     return None
 
 
-@action("modelFieldRename")
+@action("modelFieldRename", params=ModelFieldRenameParams,
+        summary="Rename a note type's field")
 async def model_field_rename(rt, modelName=None, oldFieldName=None, newFieldName=None):
     def fn(col):
         m = _model_or_raise(col, modelName)
@@ -308,7 +340,8 @@ async def model_field_rename(rt, modelName=None, oldFieldName=None, newFieldName
     return None
 
 
-@action("modelFieldReposition")
+@action("modelFieldReposition", params=ModelFieldRepositionParams,
+        summary="Reposition a note type's field")
 async def model_field_reposition(rt, modelName=None, fieldName=None, index=None):
     def fn(col):
         m = _model_or_raise(col, modelName)
@@ -318,7 +351,8 @@ async def model_field_reposition(rt, modelName=None, fieldName=None, index=None)
     return None
 
 
-@action("modelFieldSetFont")
+@action("modelFieldSetFont", params=ModelFieldSetFontParams,
+        summary="Set a field's editor font")
 async def model_field_set_font(rt, modelName=None, fieldName=None, font=None):
     if not isinstance(font, str):   # ref 1469-1470
         raise Exception("font should be a string")
@@ -331,7 +365,8 @@ async def model_field_set_font(rt, modelName=None, fieldName=None, font=None):
     return None
 
 
-@action("modelFieldSetFontSize")
+@action("modelFieldSetFontSize", params=ModelFieldSetFontSizeParams,
+        summary="Set a field's editor font size")
 async def model_field_set_font_size(rt, modelName=None, fieldName=None, fontSize=None):
     if not isinstance(fontSize, int) or isinstance(fontSize, bool):   # ref 1483-1484
         raise Exception("fontSize should be an integer")
@@ -344,7 +379,8 @@ async def model_field_set_font_size(rt, modelName=None, fieldName=None, fontSize
     return None
 
 
-@action("modelFieldSetDescription")
+@action("modelFieldSetDescription", params=ModelFieldSetDescriptionParams, returns=bool,
+        summary="Set a field's description")
 async def model_field_set_description(rt, modelName=None, fieldName=None, description=None):
     if not isinstance(description, str):   # ref 1497-1498
         raise Exception("description should be a string")
