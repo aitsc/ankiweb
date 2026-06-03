@@ -10,10 +10,11 @@ from ankiweb.notifier import NotifyConfig
 
 
 def config_from_form(enabled: bool, url: str, token: str,
-                     poll_sec: float, retry_sec: float) -> NotifyConfig:
+                     poll_sec: float, retry_sec: float, scope: str = "leaf") -> NotifyConfig:
     return NotifyConfig(
         enabled=bool(enabled), url=(url or "").strip(), token=(token or "").strip(),
-        poll_sec=float(poll_sec or 0), retry_sec=float(retry_sec or 0))
+        poll_sec=float(poll_sec or 0), retry_sec=float(retry_sec or 0),
+        scope=scope if scope in ("leaf", "all") else "leaf")
 
 
 def _fmt_ts(ts) -> str:
@@ -55,8 +56,11 @@ def render_notify_html(state, error: str = "", form=None) -> str:
     # On a rejected save, prefill from the submitted values (so input isn't lost); else config.
     src = form if form is not None else {
         "enabled": cfg.enabled, "url": cfg.url, "token": cfg.token,
-        "poll_sec": cfg.poll_sec, "retry_sec": cfg.retry_sec}
+        "poll_sec": cfg.poll_sec, "retry_sec": cfg.retry_sec, "scope": cfg.scope}
     checked = "checked" if src.get("enabled") else ""
+    scope = src.get("scope", "leaf")
+    leaf_sel = "selected" if scope != "all" else ""
+    all_sel = "selected" if scope == "all" else ""
     active = "yes" if cfg.active() else "no"
     err = html.escape(st.last_error) if st.last_error else "—"
     banner = (f"<div style='background:#fdd;border:1px solid #c00;color:#900;"
@@ -83,6 +87,11 @@ def render_notify_html(state, error: str = "", form=None) -> str:
         f"<td><input type='number' name='poll_sec' min='1' step='1' value='{_num(src.get('poll_sec', 60))}'></td></tr>"
         f"<tr><td style='padding:6px 10px 6px 0'>Retry interval (sec)</td>"
         f"<td><input type='number' name='retry_sec' min='1' step='1' value='{_num(src.get('retry_sec', 30))}'></td></tr>"
+        f"<tr><td style='padding:6px 10px 6px 0'>Scope</td>"
+        f"<td><select name='scope'>"
+        f"<option value='leaf' {leaf_sel}>Leaf only (last-level decks)</option>"
+        f"<option value='all' {all_sel}>All levels (parents count subdecks)</option>"
+        f"</select></td></tr>"
         "</table>"
         "<p><button type='submit' name='action' value='save'>Save</button> "
         "<button type='submit' name='action' value='resync' "

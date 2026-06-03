@@ -193,11 +193,15 @@ Settings persist to a `notify.json` sidecar next to the collection. Fields:
 | Token | sent as `Authorization: Bearer <token>` (omitted if empty) |
 | Poll interval (sec) | how often the deck state is refreshed (one `deck_due_tree()` call — scales to thousands of decks) |
 | Retry interval (sec) | how often a failed POST is resent |
+| Scope | which decks to watch in a nested tree: **Leaf only** (default — last-level decks with no subdecks) or **All levels** (every deck; a parent's counts then include its subdecks) |
 
-The notifier is active only when *enabled* and a URL and both intervals (> 0) are set. A deck is
-**learnable** when `new_count + learn_count + review_count > 0` (same counts as `getDeckStats` —
-respects daily limits, includes subdecks). On start, on enable, or when you click *Save &
-re-push all*, every currently-learnable deck is pushed once so your receiver syncs.
+The notifier is active only when *enabled* and a URL and both intervals (> 0) are set. Decks are
+identified by **full name** (`A::B::C`). A deck is **learnable** when
+`new_count + learn_count + review_count > 0` (same counts as `getDeckStats` — respects daily
+limits). With *All levels*, a parent deck flips learnable whenever any descendant has cards (its
+counts are the subdeck rollup); *Leaf only* reports just the bottom-level decks. On start, on
+enable, on a URL/scope change, or when you click *Save & re-push all*, every currently-learnable
+deck (in scope) is pushed once so your receiver syncs.
 
 **Request** ankiweb sends:
 

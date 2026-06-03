@@ -22,6 +22,7 @@ class NotifyConfig:
     token: str = ""           # bearer token; omitted from the request when empty
     poll_sec: float = 60.0    # deck_due_tree() refresh cadence
     retry_sec: float = 30.0   # resend cadence after a failed POST
+    scope: str = "leaf"       # "leaf" = only decks with no subdecks; "all" = every level
 
     def active(self) -> bool:
         """The notifier acts only when fully configured."""
@@ -36,12 +37,14 @@ class NotifyConfig:
             data = json.loads(Path(path).read_text())
             if not isinstance(data, dict):
                 return cls()
+            scope = str(data.get("scope", "leaf"))
             return cls(
                 enabled=bool(data.get("enabled", False)),
                 url=str(data.get("url", "") or ""),
                 token=str(data.get("token", "") or ""),
                 poll_sec=float(data.get("poll_sec", 60.0) or 0),
                 retry_sec=float(data.get("retry_sec", 30.0) or 0),
+                scope=scope if scope in ("leaf", "all") else "leaf",
             )
         except (FileNotFoundError, OSError, ValueError, TypeError):
             return cls()
@@ -49,7 +52,7 @@ class NotifyConfig:
     def save(self, path: Path) -> None:
         Path(path).write_text(json.dumps({
             "enabled": self.enabled, "url": self.url, "token": self.token,
-            "poll_sec": self.poll_sec, "retry_sec": self.retry_sec,
+            "poll_sec": self.poll_sec, "retry_sec": self.retry_sec, "scope": self.scope,
         }, indent=2))
 
 
@@ -103,6 +106,7 @@ def snapshot(col) -> dict:
             out[col.decks.name(did)] = {
                 "deck_id": did, "new_count": node.new_count,
                 "learn_count": node.learn_count, "review_count": node.review_count,
+                "is_leaf": not node.children,  # a deck with no subdecks
             }
         for child in node.children:
             walk(child)
@@ -151,7 +155,7 @@ class DeckNotifier:
         self._post = post or self._http_post   # async (cfg, payload) -> (ok, error)
         self._now = now
         self.last_notified: dict[str, bool] = {}
-        self._last_url: Optional[str] = None
+        self._last_sig = None  # (url, scope): a change re-syncs the receiver from scratch
 
     async def run(self) -> None:
         try:
@@ -159,14 +163,15 @@ class DeckNotifier:
                 cfg = self.state.config
                 if not cfg.active():
                     self.last_notified = {}
-                    self._last_url = None
+                    self._last_sig = None
                     st = self.state.status
                     st.watching = st.learnable = st.pending = 0  # don't show stale counts
                     await self._wait(None)  # idle until the config changes
                     continue
-                if cfg.url != self._last_url or self.state.resync_pending:
-                    self.last_notified = {}   # (re)pointed or manual resync -> push all again
-                    self._last_url = cfg.url
+                sig = (cfg.url, cfg.scope)
+                if sig != self._last_sig or self.state.resync_pending:
+                    self.last_notified = {}   # (re)pointed, scope changed, or manual resync
+                    self._last_sig = sig
                     self.state.resync_pending = False
                 try:
                     delay = await self._tick(cfg)
@@ -180,6 +185,10 @@ class DeckNotifier:
     async def _tick(self, cfg: NotifyConfig) -> float:
         """One observe-diff-send cycle. Returns how long to wait before the next cycle."""
         current = await self._fetch()
+        if cfg.scope == "leaf":
+            # only the last-level decks (no subdecks); switching scope makes filtered-out
+            # decks vanish from `current`, so the prune step drops them silently.
+            current = {n: c for n, c in current.items() if c.get("is_leaf", True)}
         st = self.state.status
         st.watching = len(current)
         st.learnable = sum(1 for c in current.values() if learnable(c))

@@ -40,6 +40,20 @@ def test_notify_save_persists_config(client):
     assert "http://hook.example/anki" in c.get("/notify").text
 
 
+def test_notify_scope_selector_defaults_leaf(client):
+    c, _ = client
+    html = c.get("/notify").text
+    assert "Scope" in html and "Leaf only" in html and "All levels" in html
+    assert "value='leaf' selected" in html  # leaf is the default selection
+
+
+def test_notify_save_scope_all(client):
+    c, tmp_path = client
+    c.post("/notify", data={"action": "save", "enabled": "on", "url": "http://x",
+                            "poll_sec": "5", "retry_sec": "5", "scope": "all"})
+    assert NotifyConfig.load(tmp_path / "notify.json").scope == "all"
+
+
 def test_notify_unchecked_enabled_is_false(client):
     c, tmp_path = client
     c.post("/notify", data={"action": "save", "url": "http://x", "poll_sec": "5",
