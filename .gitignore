@@ -17,3 +17,6 @@ node_modules/
 
 # E6a import upload fallback temp dir (only hit when import_tmp_dir is unset)
 ankiweb/_import_tmp/
+
+# Claude Code runtime state (session locks, scheduled-task bookkeeping)
+.claude/
