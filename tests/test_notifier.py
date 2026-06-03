@@ -1,3 +1,4 @@
+import asyncio
 import json
 from pathlib import Path
 import pytest
@@ -80,12 +81,13 @@ class FakePost:
         return self.result
 
 
+CFG = NotifyConfig(enabled=True, url="http://x", token="t", poll_sec=60, retry_sec=10)
+
+
 def _notifier(tmp_path, fetch, post):
     state = NotifierState(tmp_path / "notify.json")
+    state.config = CFG  # mirror run(): the tick's cfg is the state's live config (identity guard)
     return DeckNotifier(state, fetch=fetch, post=post, now=lambda: 1780500000.0), state
-
-
-CFG = NotifyConfig(enabled=True, url="http://x", token="t", poll_sec=60, retry_sec=10)
 
 
 @pytest.mark.asyncio
@@ -189,3 +191,67 @@ def test_snapshot_real_collection(tmp_path):
 
 async def _async(value):
     return value
+
+
+# ----- review fixes -----
+def test_load_corrupt_json_degrades_to_defaults(tmp_path):  # fix #4
+    p = tmp_path / "notify.json"
+    for bad in ('{"poll_sec": "abc", "enabled": true}', "[1,2,3]", "not json", "null"):
+        p.write_text(bad)
+        assert NotifyConfig.load(p) == NotifyConfig()
+
+
+@pytest.mark.asyncio
+async def test_tick_aborts_post_if_config_changed_during_fetch(tmp_path):  # fix #1
+    snap = {"A": _counts(n=1, did=10)}
+    post = FakePost()
+    state = NotifierState(tmp_path / "notify.json")
+    state.config = CFG
+
+    async def fetch_then_repoint():
+        # a /notify save lands during the fetch await -> NotifierState.update rebinds .config
+        state.config = NotifyConfig(enabled=True, url="http://NEW", poll_sec=60, retry_sec=10)
+        return snap
+
+    n = DeckNotifier(state, fetch=fetch_then_repoint, post=post, now=lambda: 0.0)
+    await n._tick(CFG)                 # CFG is the snapshot captured at the loop top
+    assert post.calls == []            # must NOT POST to the stale target
+    assert n.last_notified == {}       # baseline not advanced
+
+
+@pytest.mark.asyncio
+async def test_run_survives_fetch_error_and_retries(tmp_path):  # fix #3
+    state = NotifierState(tmp_path / "notify.json")
+    state.config = NotifyConfig(enabled=True, url="http://x", poll_sec=0.01, retry_sec=0.01)
+    calls = {"n": 0}
+
+    async def bad_fetch():
+        calls["n"] += 1
+        raise RuntimeError("collection not open")
+
+    n = DeckNotifier(state, fetch=bad_fetch, post=FakePost(), now=lambda: 0.0)
+    task = asyncio.create_task(n.run())
+    await asyncio.sleep(0.06)
+    assert not task.done()                                   # the task did NOT die
+    assert calls["n"] >= 2                                   # it kept retrying
+    assert "collection not open" in state.status.last_error  # error surfaced
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_run_zeros_status_when_disabled(tmp_path):  # fix #2
+    state = NotifierState(tmp_path / "notify.json")  # disabled by default
+    state.status.watching, state.status.learnable, state.status.pending = 5, 3, 2
+    n = DeckNotifier(state, fetch=lambda: _async({}), post=FakePost())
+    task = asyncio.create_task(n.run())
+    await asyncio.sleep(0.02)
+    assert (state.status.watching, state.status.learnable, state.status.pending) == (0, 0, 0)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass

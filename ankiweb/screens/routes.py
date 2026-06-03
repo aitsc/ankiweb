@@ -24,7 +24,7 @@ from ankiweb.screens.fields import render_fields_html, make_fields_handler
 from ankiweb.screens.card_layout import render_card_layout_html, make_card_layout_handler
 from ankiweb.screens.tools import render_tools_html, make_tools_handler
 from ankiweb.screens.notetypes import render_notetypes_html, make_notetypes_handler
-from ankiweb.screens.notify import render_notify_html, config_from_form
+from ankiweb.screens.notify import render_notify_html, config_from_form, header_safe
 
 
 def build_screen_router(get_service, get_notifier=None) -> APIRouter:
@@ -116,12 +116,15 @@ def build_screen_router(get_service, get_notifier=None) -> APIRouter:
                           url: str = Form(""), token: str = Form(""),
                           poll_sec: float = Form(60.0), retry_sec: float = Form(30.0)):
         state = get_notifier()
+        if not header_safe(token):
+            form = {"enabled": enabled, "url": url, "token": token,
+                    "poll_sec": poll_sec, "retry_sec": retry_sec}
+            return HTMLResponse(render_page("notify", render_notify_html(
+                state, error="Token must be ASCII / latin-1 (it is sent in an HTTP header).",
+                form=form)), status_code=400)
+        state.update(config_from_form(enabled, url, token, poll_sec, retry_sec))
         if action == "resync":
-            # persist any edits first, then drop the baseline so all learnable decks re-push
-            state.update(config_from_form(enabled, url, token, poll_sec, retry_sec))
-            state.request_resync()
-        else:
-            state.update(config_from_form(enabled, url, token, poll_sec, retry_sec))
+            state.request_resync()  # drop the baseline so all learnable decks re-push
         return RedirectResponse("/notify", status_code=303)
 
     @router.get("/about", response_class=HTMLResponse)

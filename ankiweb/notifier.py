@@ -29,17 +29,22 @@ class NotifyConfig:
 
     @classmethod
     def load(cls, path: Path) -> "NotifyConfig":
+        # A missing OR corrupt notify.json must degrade to defaults, never crash startup —
+        # the whole parse (not just json.loads) is guarded, since float()/.get() on bad data
+        # (non-numeric interval, non-dict top level) would otherwise raise.
         try:
             data = json.loads(Path(path).read_text())
-        except (FileNotFoundError, ValueError, OSError):
+            if not isinstance(data, dict):
+                return cls()
+            return cls(
+                enabled=bool(data.get("enabled", False)),
+                url=str(data.get("url", "") or ""),
+                token=str(data.get("token", "") or ""),
+                poll_sec=float(data.get("poll_sec", 60.0) or 0),
+                retry_sec=float(data.get("retry_sec", 30.0) or 0),
+            )
+        except (FileNotFoundError, OSError, ValueError, TypeError):
             return cls()
-        return cls(
-            enabled=bool(data.get("enabled", False)),
-            url=str(data.get("url", "") or ""),
-            token=str(data.get("token", "") or ""),
-            poll_sec=float(data.get("poll_sec", 60.0) or 0),
-            retry_sec=float(data.get("retry_sec", 30.0) or 0),
-        )
 
     def save(self, path: Path) -> None:
         Path(path).write_text(json.dumps({
@@ -155,13 +160,19 @@ class DeckNotifier:
                 if not cfg.active():
                     self.last_notified = {}
                     self._last_url = None
+                    st = self.state.status
+                    st.watching = st.learnable = st.pending = 0  # don't show stale counts
                     await self._wait(None)  # idle until the config changes
                     continue
                 if cfg.url != self._last_url or self.state.resync_pending:
                     self.last_notified = {}   # (re)pointed or manual resync -> push all again
                     self._last_url = cfg.url
                     self.state.resync_pending = False
-                delay = await self._tick(cfg)
+                try:
+                    delay = await self._tick(cfg)
+                except Exception as exc:  # a fetch/backend error must NOT kill the task
+                    self.state.status.last_error = str(exc)
+                    delay = cfg.retry_sec
                 await self._wait(delay)
         except asyncio.CancelledError:
             pass
@@ -177,6 +188,10 @@ class DeckNotifier:
         changes = diff_changes(current, self.last_notified)
         st.pending = len(changes)
         if not changes:
+            return cfg.poll_sec
+        if self.state.config is not cfg:
+            # config was edited (url/token/disable/intervals) during the fetch await — don't
+            # POST to a stale target; run()'s next iteration re-reads config and re-baselines.
             return cfg.poll_sec
         st.last_attempt_ts = self._now()
         ok, err = await self._safe_post(cfg, build_payload(changes, self._now()))

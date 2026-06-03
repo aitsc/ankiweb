@@ -47,6 +47,18 @@ def test_notify_unchecked_enabled_is_false(client):
     assert NotifyConfig.load(tmp_path / "notify.json").enabled is False
 
 
+def test_notify_rejects_non_latin1_token(client):  # fix #5
+    c, tmp_path = client
+    r = c.post("/notify", data={"action": "save", "enabled": "on", "url": "http://x",
+                                "token": "secret你", "poll_sec": "5", "retry_sec": "5"},
+               follow_redirects=False)
+    assert r.status_code == 400
+    assert "latin-1" in r.text or "ASCII" in r.text
+    assert "http://x" in r.text  # the submitted URL is preserved on the error page
+    # nothing was persisted (no notify.json written)
+    assert not (tmp_path / "notify.json").exists()
+
+
 def test_notify_resync_sets_flag(client):
     c, _ = client
     c.post("/notify", data={"action": "resync", "enabled": "on", "url": "http://x",

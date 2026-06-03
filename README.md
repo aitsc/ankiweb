@@ -177,6 +177,48 @@ is unchanged: real clients still `POST /` with `{"action", "version", "params"}`
 `ANKIWEB_AC_KEY` is set, send it as the `X-API-Key` header (use the **Authorize** button in
 Swagger); the canonical `POST /` keeps reading the key from the request body as upstream does.
 
+### Deck push notifications (Extras)
+
+An **ankiweb-original** feature (not part of the Anki/AnkiConnect port): ankiweb can POST to an
+endpoint of yours whenever a deck's *learnable* status changes — i.e. it gains cards to study
+now, or runs out. Useful for a study bot/agent that should react without polling.
+
+Configure it live at **Extras ▾ → Push notifications** (`/notify`) — no env vars, no restart.
+Settings persist to a `notify.json` sidecar next to the collection. Fields:
+
+| field | meaning |
+|---|---|
+| Enabled | master on/off |
+| POST URL | where to send notifications |
+| Token | sent as `Authorization: Bearer <token>` (omitted if empty) |
+| Poll interval (sec) | how often the deck state is refreshed (one `deck_due_tree()` call — scales to thousands of decks) |
+| Retry interval (sec) | how often a failed POST is resent |
+
+The notifier is active only when *enabled* and a URL and both intervals (> 0) are set. A deck is
+**learnable** when `new_count + learn_count + review_count > 0` (same counts as `getDeckStats` —
+respects daily limits, includes subdecks). On start, on enable, or when you click *Save &
+re-push all*, every currently-learnable deck is pushed once so your receiver syncs.
+
+**Request** ankiweb sends:
+
+```
+POST <url>
+Authorization: Bearer <token>          # omitted when token is empty
+Content-Type: application/json
+
+{ "source": "ankiweb",
+  "ts": 1780500000,                     # epoch seconds
+  "changes": [
+    { "deck": "英语词汇::单词", "deckId": 1780005159378, "learnable": true,
+      "new_count": 12, "learn_count": 3, "review_count": 40 } ] }
+```
+
+**Success** = HTTP `200` **and** a JSON body with `ok` exactly `true`. Anything else (non-200,
+missing/false `ok`, non-JSON, timeout, connection error) is treated as a failure and retried
+every *retry interval* until it succeeds. While a notification is unacknowledged, further deck
+changes are coalesced — the resend always carries the **latest** state, and a change that
+reverts to the last acknowledged state sends nothing. Deleted/renamed decks drop silently.
+
 ### Night mode
 
 Toggle with the 🌙 button in the top toolbar (persisted in `localStorage`); it themes the
