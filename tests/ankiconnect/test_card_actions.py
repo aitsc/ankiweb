@@ -78,3 +78,26 @@ def test_answer_cards(client):
     cid = _call(client, "findCards", query="deck:Default")[0]
     res = _call(client, "answerCards", answers=[{"cardId": cid, "ease": 3}])
     assert res == [True]
+
+
+# Invalid-id leniency: match canonical AnkiConnect (return False/None, never an error envelope).
+def test_set_ease_factors_invalid_id(client):
+    _add(client, "easebad")
+    cid = _call(client, "findCards", query="deck:Default")[0]
+    # valid card -> True, missing card -> False (AnkiConnect appends False for NotFoundError)
+    assert _call(client, "setEaseFactors",
+                 cards=[cid, 99999], easeFactors=[2500, 2500]) == [True, False]
+
+
+def test_set_specific_value_of_card_invalid_id(client):
+    # missing card -> the whole call returns False (AnkiConnect returns False on NotFoundError)
+    assert _call(client, "setSpecificValueOfCard", card=99999,
+                 keys=["flags"], newValues=[1], warning_check=True) is False
+
+
+def test_answer_cards_invalid_id(client):
+    _add(client, "ansbad")
+    cid = _call(client, "findCards", query="deck:Default")[0]
+    res = _call(client, "answerCards",
+                answers=[{"cardId": cid, "ease": 3}, {"cardId": 99999, "ease": 3}])
+    assert res == [True, False]

@@ -73,4 +73,19 @@ def test_remove_unknown_or_default_config_returns_false(client):
 
 def test_get_deck_config_missing_deck_does_not_create(client):
     assert _call(client, "getDeckConfig", deck="NoSuchDeck") is False
+
+
+def test_get_decks_groups_by_deck(client):
+    _call(client, "addNote", note={"deckName": "Default", "modelName": "Basic",
+                                    "fields": {"Front": "gd", "Back": "A"}})
+    cid = _call(client, "findCards", query="deck:Default")[0]
+    assert _call(client, "getDecks", cards=[cid]) == {"Default": [cid]}
+
+
+def test_get_decks_invalid_id(client):
+    _call(client, "addNote", note={"deckName": "Default", "modelName": "Basic",
+                                    "fields": {"Front": "gdbad", "Back": "A"}})
+    cid = _call(client, "findCards", query="deck:Default")[0]
+    # missing card id buckets under "Default" (faithful to AnkiConnect), never an error envelope
+    assert _call(client, "getDecks", cards=[cid, 99999]) == {"Default": [cid, 99999]}
     assert "NoSuchDeck" not in _call(client, "deckNames")  # a read query must not create it
