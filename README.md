@@ -177,6 +177,16 @@ is unchanged: real clients still `POST /` with `{"action", "version", "params"}`
 `ANKIWEB_AC_KEY` is set, send it as the `X-API-Key` header (use the **Authorize** button in
 Swagger); the canonical `POST /` keeps reading the key from the request body as upstream does.
 
+**Extra actions (ankiweb-original).** A few actions that are *not* part of AnkiConnect live
+under a separate `/extra_actions/<name>` namespace — documented in `/docs` (tagged
+`extra_actions`) and callable there, but deliberately **unknown to the canonical `POST /`**
+dispatcher (so the root surface stays byte-identical to upstream). Currently:
+
+- `POST /extra_actions/deleteModel` `{ "modelName": "MyType" }` (or `{ "modelId": 1234 }`) —
+  delete an entire note type (the reverse of `createModel`). Returns `true`; **errors** if any
+  note still uses it, if the type isn't found, or if it's the only remaining note type. The
+  same `X-API-Key` gate applies.
+
 ### Deck push notifications (Extras)
 
 An **ankiweb-original** feature (not part of the Anki/AnkiConnect port): ankiweb can POST to an
