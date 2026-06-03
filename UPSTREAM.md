@@ -60,7 +60,10 @@ These are the local checkouts the port was written against (read for understandi
 4. **`/extra_actions/<name>` is ankiweb-original** (not in AnkiConnect). These use the separate
    `EXTRA_ACTIONS`/`EXTRA_ACTION_SPECS` registries (`@extra_action`) and are reachable only at
    `/extra_actions/<name>`, never via `POST /`. When diffing upstream, do NOT expect these to
-   exist there. Currently: `deleteModel` (delete a whole note type if unused).
+   exist there. Currently: `deleteModel` (delete a whole note type if unused),
+   `getNotifyConfig` / `setNotifyConfig` (read/modify the Push-notifications config — they edit
+   the shared `NotifierState`, so `create_ankiconnect_app(notifier=...)` must be wired in
+   `__main__`).
 
 ---
 

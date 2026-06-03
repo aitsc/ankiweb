@@ -46,7 +46,8 @@ def _make_endpoint(name: str, model: type, registry: dict, op_name: str):
     async def endpoint(params, request: Request, x_api_key: Optional[str]):
         rt = Runtime(service=request.app.state.service,
                      config=request.app.state.config,
-                     hub=request.app.state.hub)
+                     hub=request.app.state.hub,
+                     notifier=getattr(request.app.state, "notifier", None))
         req = {"action": name, "version": 6,
                "params": params.model_dump(exclude_unset=True, by_alias=True)}
         if x_api_key is not None:

@@ -18,7 +18,10 @@ async def _serve() -> None:
     hub = BridgeHub()
     notifier_state = NotifierState(settings.collection_path.parent / "notify.json")
     web = create_app(settings, service=service, hub=hub, notifier=notifier_state)
-    api = create_ankiconnect_app(settings, service=service, config=ac_config, hub=hub)
+    # Same NotifierState instance, so /extra_actions/setNotifyConfig on :8765 edits the live
+    # config that the web form (:8000) and the running notifier task share.
+    api = create_ankiconnect_app(settings, service=service, config=ac_config, hub=hub,
+                                 notifier=notifier_state)
     web_server = uvicorn.Server(uvicorn.Config(web, host=settings.host, port=settings.port,
                                                log_level="info"))
     api_server = uvicorn.Server(uvicorn.Config(api, host=ac_config.bind_address,
