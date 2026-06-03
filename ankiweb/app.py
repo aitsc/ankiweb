@@ -35,10 +35,11 @@ from ankiweb.assets import build_router as build_assets_router, build_media_rout
 from ankiweb.anki_rpc import build_router as build_rpc_router
 from ankiweb.bridge.ws import build_router as build_ws_router
 from ankiweb.screens.routes import build_screen_router, register_screen_handlers
+from ankiweb.notifier import NotifierState
 
 
 def create_app(settings: Settings | None = None, service: CollectionService | None = None,
-               hub: BridgeHub | None = None) -> FastAPI:
+               hub: BridgeHub | None = None, notifier=None) -> FastAPI:
     settings = settings or Settings.from_env()
     owns = service is None
 
@@ -53,6 +54,8 @@ def create_app(settings: Settings | None = None, service: CollectionService | No
         app.state.settings = settings
         app.state.service = svc
         app.state.hub = h
+        app.state.notifier = notifier if notifier is not None else NotifierState(
+            settings.collection_path.parent / "notify.json")
         register_screen_handlers(svc, h)
         try:
             yield
@@ -113,7 +116,7 @@ def create_app(settings: Settings | None = None, service: CollectionService | No
     app.include_router(build_assets_router(settings.assets_dir))       # GET  /_anki/{path}
     app.include_router(build_rpc_router(lambda: app.state.service, lambda: app.state.hub))    # POST /_anki/{method}
     app.include_router(build_ws_router(lambda: app.state.hub, settings.allowed_hosts, settings.password))  # WS /ws
-    app.include_router(build_screen_router(lambda: app.state.service))  # GET / and /deckbrowser
+    app.include_router(build_screen_router(lambda: app.state.service, lambda: app.state.notifier))  # GET / + /notify
     app.include_router(build_sveltekit_router(settings.assets_dir))     # GET  /graphs, /_app/{path}, /favicon.ico
     app.include_router(build_media_router(lambda: app.state.service))  # GET  /{path} — LAST
 
