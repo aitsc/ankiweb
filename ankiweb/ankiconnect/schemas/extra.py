@@ -12,6 +12,16 @@ class DeleteModelParams(ACBaseModel):
                                    description="Note type id (alternative to modelName).")
 
 
+class ExtendCardLimitsParams(ACBaseModel):
+    """Add to (or subtract from) today's new/review card limits for a deck — the API form of
+    Custom Study's 'Increase today's … card limit'. Identify the deck by name or id."""
+    deck: Optional[str] = Field(default=None, description="Deck name.")
+    deckId: Optional[int] = Field(default=None, description="Deck id (alternative to `deck`).")
+    new: int = Field(default=0, description="Delta for today's NEW card limit (negative reduces).")
+    review: int = Field(default=0,
+                        description="Delta for today's REVIEW card limit (negative reduces).")
+
+
 class GetNotifyConfigParams(ACBaseModel):
     """Read the Push-notifications configuration and live status."""
     # no parameters

@@ -6,3 +6,4 @@ them as unsupported. Keeps the canonical AnkiConnect surface byte-identical to u
 """
 from ankiweb.ankiconnect.extra_actions import models  # noqa: F401 — registers extra actions
 from ankiweb.ankiconnect.extra_actions import notify  # noqa: F401 — registers extra actions
+from ankiweb.ankiconnect.extra_actions import scheduling  # noqa: F401 — registers extra actions

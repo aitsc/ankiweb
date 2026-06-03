@@ -78,6 +78,39 @@ def test_delete_model_in_openapi(client):
     assert "extra_actions" in schema["paths"]["/extra_actions/deleteModel"]["post"]["tags"]
 
 
+# ----- extendCardLimits (today's new/review limit add/subtract) -----
+def test_extend_card_limits_new(client):
+    _post(client, "/actions/createDeck", deck="CS")
+    notes = [{"deckName": "CS", "modelName": "Basic", "fields": {"Front": f"Q{i}", "Back": "A"}}
+             for i in range(25)]  # > the default daily new limit (20) -> new_count gets capped
+    _post(client, "/actions/addNotes", notes=notes)
+    base = _post(client, "/extra_actions/extendCardLimits", deck="CS", new=0)["result"]["new_count"]
+    assert base > 5  # capped by today's new limit, not 25
+    r = _post(client, "/extra_actions/extendCardLimits", deck="CS", new=-5)
+    assert r["error"] is None and r["result"]["new_count"] == base - 5
+    r = _post(client, "/extra_actions/extendCardLimits", deck="CS", new=5)
+    assert r["result"]["new_count"] == base  # back to the cap (deltas accumulate)
+
+
+def test_extend_card_limits_by_id_and_review(client):
+    did = _post(client, "/actions/createDeck", deck="CS2")["result"]
+    r = _post(client, "/extra_actions/extendCardLimits", deckId=did, new=1, review=3)
+    assert r["error"] is None and r["result"]["deckId"] == did
+    assert {"new_count", "learn_count", "review_count"} <= set(r["result"])
+
+
+def test_extend_card_limits_deck_not_found(client):
+    r = _post(client, "/extra_actions/extendCardLimits", deck="NoSuchDeck", new=1)
+    assert r["result"] is None and "deck was not found" in r["error"]
+
+
+def test_extend_card_limits_not_on_root(client):
+    body = client.post("/", json={"action": "extendCardLimits", "version": 6,
+                                  "params": {"deck": "Default", "new": 1}}).json()
+    assert body["result"] is None and "unsupported action" in body["error"]
+    assert client.post("/actions/extendCardLimits", json={"deck": "x"}).status_code == 404
+
+
 # ----- push-notifications config get/set -----
 def test_get_notify_config(nclient):
     r = _post(nclient, "/extra_actions/getNotifyConfig")
