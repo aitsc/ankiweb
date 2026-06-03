@@ -63,7 +63,8 @@ These are the local checkouts the port was written against (read for understandi
    exist there. Currently: `deleteModel` (delete a whole note type if unused),
    `getNotifyConfig` / `setNotifyConfig` (read/modify the Push-notifications config — they edit
    the shared `NotifierState`, so `create_ankiconnect_app(notifier=...)` must be wired in
-   `__main__`).
+   `__main__`), `extendCardLimits` (add/subtract today's new/review limits via
+   `col.sched.custom_study(CustomStudyRequest(new_limit_delta/review_limit_delta))`).
 
 ---
 

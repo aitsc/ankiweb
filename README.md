@@ -186,6 +186,10 @@ dispatcher (so the root surface stays byte-identical to upstream). Currently:
   delete an entire note type (the reverse of `createModel`). Returns `true`; **errors** if any
   note still uses it, if the type isn't found, or if it's the only remaining note type. The
   same `X-API-Key` gate applies.
+- `POST /extra_actions/extendCardLimits` `{ "deck": "MyDeck", "new": 10, "review": -5 }` —
+  temporarily add to (or subtract from) today's new/review card limits for a deck (the API form
+  of Custom Study's "Increase today's … card limit"; negative reduces, deltas accumulate).
+  Identify the deck by `deck` name or `deckId`. Returns the deck's resulting counts.
 - `POST /extra_actions/getNotifyConfig` `{}` — read the [Deck push notifications](#deck-push-notifications-extras)
   config + live status.
 - `POST /extra_actions/setNotifyConfig` `{ "enabled": true, "url": "https://…", "poll_sec": 30 }`
