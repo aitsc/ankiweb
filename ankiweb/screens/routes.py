@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 import tempfile
 from fastapi import APIRouter, Form, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from starlette.background import BackgroundTask
 
 _MIME_EXT = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
@@ -24,9 +24,10 @@ from ankiweb.screens.fields import render_fields_html, make_fields_handler
 from ankiweb.screens.card_layout import render_card_layout_html, make_card_layout_handler
 from ankiweb.screens.tools import render_tools_html, make_tools_handler
 from ankiweb.screens.notetypes import render_notetypes_html, make_notetypes_handler
+from ankiweb.screens.notify import render_notify_html, config_from_form
 
 
-def build_screen_router(get_service) -> APIRouter:
+def build_screen_router(get_service, get_notifier=None) -> APIRouter:
     router = APIRouter()
 
     @router.get("/", response_class=HTMLResponse)
@@ -105,6 +106,23 @@ def build_screen_router(get_service) -> APIRouter:
         service = get_service()
         body = await service.run(render_tools_html)
         return HTMLResponse(render_page("tools", body))
+
+    @router.get("/notify", response_class=HTMLResponse)
+    async def notify_page():
+        return HTMLResponse(render_page("notify", render_notify_html(get_notifier())))
+
+    @router.post("/notify")
+    async def notify_post(action: str = Form("save"), enabled: bool = Form(False),
+                          url: str = Form(""), token: str = Form(""),
+                          poll_sec: float = Form(60.0), retry_sec: float = Form(30.0)):
+        state = get_notifier()
+        if action == "resync":
+            # persist any edits first, then drop the baseline so all learnable decks re-push
+            state.update(config_from_form(enabled, url, token, poll_sec, retry_sec))
+            state.request_resync()
+        else:
+            state.update(config_from_form(enabled, url, token, poll_sec, retry_sec))
+        return RedirectResponse("/notify", status_code=303)
 
     @router.get("/about", response_class=HTMLResponse)
     async def about_page():

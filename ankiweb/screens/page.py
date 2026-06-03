@@ -28,8 +28,18 @@ _TOOLBAR_CSS = (
     "#ankiweb-toolbar a:hover{text-decoration:underline;}"
     "#ankiweb-toolbar .nm{margin-left:auto;border:0;background:transparent;"
     "cursor:pointer;font-size:16px;}"
+    # "Extras" CSS-only dropdown (ankiweb-original features, separate from the Anki port).
+    "#ankiweb-toolbar .menu{position:relative;}"
+    "#ankiweb-toolbar .menu>.lbl{cursor:default;color:#333;}"
+    "#ankiweb-toolbar .menu .sub{display:none;position:absolute;top:100%;left:0;"
+    "background:#f0f0f0;border:1px solid #ccc;min-width:170px;flex-direction:column;"
+    "padding:4px 0;box-shadow:0 2px 6px rgba(0,0,0,.15);}"
+    "#ankiweb-toolbar .menu:hover .sub{display:flex;}"
+    "#ankiweb-toolbar .menu .sub a{padding:5px 14px;white-space:nowrap;}"
     "html.night-mode #ankiweb-toolbar{background:#1e1e1e;border-color:#444;}"
     "html.night-mode #ankiweb-toolbar a{color:#ccc;}"
+    "html.night-mode #ankiweb-toolbar .menu>.lbl{color:#ccc;}"
+    "html.night-mode #ankiweb-toolbar .menu .sub{background:#1e1e1e;border-color:#444;}"
     "body{padding-top:42px;}"
     "</style>"
 )
@@ -47,6 +57,9 @@ def _toolbar_html() -> str:
         # qt_accel_tools is "&Tools" (menu accelerator); strip the & for a clean label.
         f"<a href='/tools'>{tr.qt_accel_tools().replace('&', '')}</a>"
         "<a href='/about' title='Source code (AGPL)'>Source</a>"
+        # ankiweb-original features (beyond the Anki/AnkiConnect port) live under "Extras".
+        "<div class='menu'><span class='lbl' title='ankiweb extras'>Extras ▾</span>"
+        "<div class='sub'><a href='/notify'>Push notifications</a></div></div>"
         "<button class='nm' onclick='ankiwebToggleNight()' title='Toggle night mode'>\U0001F319</button>"
         "</div>"
     )
