@@ -1,5 +1,5 @@
 import pytest
-from ankiweb.ankiconnect.registry import ACTIONS, action
+from ankiweb.ankiconnect.registry import ACTIONS, ACTION_SPECS, action
 from ankiweb.ankiconnect.dispatch import dispatch_one
 from ankiweb.ankiconnect.config import AnkiConnectConfig
 from ankiweb.ankiconnect.runtime import Runtime
@@ -19,8 +19,9 @@ def _register():
     async def boom(rt):
         raise ValueError("kaboom")
     yield
-    ACTIONS.pop("echo", None)
-    ACTIONS.pop("boom", None)
+    for n in ("echo", "boom"):
+        ACTIONS.pop(n, None)
+        ACTION_SPECS.pop(n, None)  # the decorator now writes both registries
 
 
 async def test_v6_success_enveloped(rt):

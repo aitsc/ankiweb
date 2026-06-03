@@ -9,6 +9,7 @@ from ankiweb.bridge.hub import BridgeHub
 from ankiweb.ankiconnect.runtime import Runtime
 from ankiweb.ankiconnect.cors import allow_origin
 from ankiweb.ankiconnect.dispatch import dispatch_one
+from ankiweb.ankiconnect.rest import build_actions_router
 import ankiweb.ankiconnect.actions  # noqa: F401 — registers actions
 
 
@@ -77,5 +78,9 @@ def create_ankiconnect_app(
             req["params"]["origin"] = origin
         reply = await dispatch_one(rt, req)
         return JSONResponse(reply, headers=headers)
+
+    # Additive typed surface for /docs (one POST /actions/<name> per action). The canonical
+    # POST / above is the source of truth; these routes call the same dispatch_one.
+    app.include_router(build_actions_router())
 
     return app
