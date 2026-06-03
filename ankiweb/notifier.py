@@ -94,6 +94,13 @@ def learnable(counts: dict) -> bool:
             + counts.get("review_count", 0)) > 0
 
 
+def counts_sig(counts: dict) -> tuple:
+    """The (new, learn, review) tuple — the value a deck's notification state is keyed on.
+    A change in ANY of the three (incl. bucket shifts that keep the total) triggers a notify."""
+    return (counts.get("new_count", 0), counts.get("learn_count", 0),
+            counts.get("review_count", 0))
+
+
 def snapshot(col) -> dict:
     """{full_deck_name: {deck_id, new_count, learn_count, review_count}} from deck_due_tree().
     One backend call for the whole tree — scales to thousands of decks. The synthetic root
@@ -116,15 +123,16 @@ def snapshot(col) -> dict:
 
 
 def diff_changes(current: dict, last_notified: dict) -> list:
-    """Decks whose learnable bool differs from what the receiver last acknowledged.
-    `last_notified` maps full name -> bool; an absent deck is treated as not-learnable, so an
-    empty baseline makes every currently-learnable deck a change (the startup push)."""
+    """Decks whose (new, learn, review) counts differ from what the receiver last acknowledged.
+    `last_notified` maps full name -> the acknowledged counts tuple; an absent deck is treated
+    as (0, 0, 0), so an empty baseline makes every deck with any nonzero count a change (the
+    startup push) while always-empty decks stay silent."""
     changes = []
     for name, counts in current.items():
-        now = learnable(counts)
-        if now != last_notified.get(name, False):
+        sig = counts_sig(counts)
+        if sig != last_notified.get(name, (0, 0, 0)):
             changes.append({
-                "deck": name, "deckId": counts["deck_id"], "learnable": now,
+                "deck": name, "deckId": counts["deck_id"], "learnable": sum(sig) > 0,
                 "new_count": counts["new_count"], "learn_count": counts["learn_count"],
                 "review_count": counts["review_count"],
             })
@@ -154,7 +162,7 @@ class DeckNotifier:
         self._fetch = fetch                    # async () -> snapshot dict
         self._post = post or self._http_post   # async (cfg, payload) -> (ok, error)
         self._now = now
-        self.last_notified: dict[str, bool] = {}
+        self.last_notified: dict[str, tuple] = {}  # deck name -> acknowledged (new, learn, review)
         self._last_sig = None  # (url, scope): a change re-syncs the receiver from scratch
 
     async def run(self) -> None:
@@ -206,7 +214,7 @@ class DeckNotifier:
         ok, err = await self._safe_post(cfg, build_payload(changes, self._now()))
         if ok:
             for ch in changes:
-                self.last_notified[ch["deck"]] = ch["learnable"]
+                self.last_notified[ch["deck"]] = counts_sig(ch)
             st.last_success_ts = self._now()
             st.last_error = ""
             st.pending = 0

@@ -1,8 +1,13 @@
 # Deck Push Notifier — Design
 
-**Goal:** Proactively notify an external HTTP endpoint whenever a deck's *learnable* status
-flips (gains cards to study now ⟷ has none), so a downstream system (a study agent, a bot)
-learns about it without polling AnkiConnect. Configured live from a new **Extras** menu in the
+**Goal:** Proactively notify an external HTTP endpoint whenever a deck's study counts change —
+its `(new_count, learn_count, review_count)` tuple moves (any of the three, including bucket
+shifts that preserve the total) — so a downstream system (a study agent, a bot) learns about it
+without polling AnkiConnect.
+
+> **Trigger update (2026-06-04):** originally this fired only when the *learnable* boolean
+> flipped (total `> 0` ⟷ `= 0`). It now fires on **any change to the counts tuple**. The payload
+> still carries a `learnable` field (`total > 0`) for convenience. Configured live from a new **Extras** menu in the
 web UI — this is an ankiweb-original feature, distinct from the Anki/AnkiConnect port.
 
 ## Definitions
@@ -51,18 +56,18 @@ Content-Type: application/json
 
 ## State machine (in-memory)
 
-Two facts per deck: `current` (latest observed learnable bool + counts) and `last_notified`
-(the learnable bool the receiver last acknowledged). `last_notified` starts **empty** so the
-first poll treats every currently-learnable deck as a change → the startup push of all learnable
-decks. It also resets to empty whenever the feature is disabled or the `url` changes, so
+Two facts per deck: `current` (latest observed counts) and `last_notified` (the `(new, learn,
+review)` tuple the receiver last acknowledged). `last_notified` starts **empty**, and an unseen
+deck's baseline is `(0, 0, 0)`, so the first poll treats every deck with nonzero counts as a
+change → the startup push (always-empty decks stay silent)s. It also resets to empty whenever the feature is disabled or the `url` changes, so
 re-enabling / re-pointing re-syncs the receiver.
 
 Each loop iteration (when active):
 1. `current = fetch()` (deck_due_tree snapshot, via `service.run`).
 2. Prune `last_notified` keys no longer in `current` (deleted/renamed decks dropped silently).
-3. `changes = {d : learnable(current[d]) != last_notified.get(d, False)}`.
+3. `changes = {d : counts_sig(current[d]) != last_notified.get(d, (0, 0, 0))}`.
 4. If `changes`: POST a payload built from the **current** state of the changed decks.
-   - success → `last_notified[d] = learnable` for each changed deck; wait `poll_sec`.
+   - success → `last_notified[d] = counts_sig` for each changed deck; wait `poll_sec`.
    - failure → leave `last_notified` untouched; wait `retry_sec`, then re-fetch and re-send.
      Because the payload is always rebuilt from fresh `current`, a deck that changed again while
      a send was failing is sent with its **latest** value, and a flip-then-flip-back nets to no

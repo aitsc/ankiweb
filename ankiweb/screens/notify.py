@@ -70,8 +70,8 @@ def render_notify_html(state, error: str = "", form=None) -> str:
         "<h2>Push notifications</h2>"
         f"{banner}"
         "<p style='color:#666'>An ankiweb-original feature (not part of the Anki/AnkiConnect "
-        "port). POSTs to your endpoint whenever a deck becomes learnable or stops being "
-        "learnable. Configuration is live — saving applies without a restart.</p>"
+        "port). POSTs to your endpoint whenever a deck's new/learn/review counts change "
+        "(any of the three). Configuration is live — saving applies without a restart.</p>"
 
         "<form method='post' action='/notify'>"
         "<table style='border-collapse:collapse'>"
