@@ -57,6 +57,10 @@ These are the local checkouts the port was written against (read for understandi
    `test_params_model_matches_handler_signature` test fails if a model's fields drift from its
    handler signature, so it flags any action whose params changed upstream. See
    `docs/superpowers/specs/2026-06-03-ankiconnect-openapi-schemas-design.md`.
+4. **`/extra_actions/<name>` is ankiweb-original** (not in AnkiConnect). These use the separate
+   `EXTRA_ACTIONS`/`EXTRA_ACTION_SPECS` registries (`@extra_action`) and are reachable only at
+   `/extra_actions/<name>`, never via `POST /`. When diffing upstream, do NOT expect these to
+   exist there. Currently: `deleteModel` (delete a whole note type if unused).
 
 ---
 

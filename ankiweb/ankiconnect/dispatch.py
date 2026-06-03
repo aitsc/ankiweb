@@ -10,8 +10,12 @@ def _envelope(version: int, result: Any) -> Any:
     return {"result": result, "error": None}
 
 
-async def dispatch_one(rt, req: dict) -> Any:
-    """Dispatch a single AnkiConnect request object → its reply (enveloped per version)."""
+async def dispatch_one(rt, req: dict, actions: dict = ACTIONS) -> Any:
+    """Dispatch a single AnkiConnect request object → its reply (enveloped per version).
+
+    `actions` is the registry to resolve against; defaults to the canonical ACTIONS (POST /).
+    The /extra_actions/<name> routes pass EXTRA_ACTIONS, so ankiweb-original actions are
+    reachable there but unknown to the canonical root dispatcher."""
     version = req.get("version", 4)
     try:
         action_name = req.get("action") or ""
@@ -21,9 +25,9 @@ async def dispatch_one(rt, req: dict) -> Any:
             if req.get("key") != rt.config.api_key:
                 raise Exception("valid api key must be provided")
         if action_name == "multi":
-            result = [await dispatch_one(rt, sub) for sub in (params.get("actions") or [])]
-        elif action_name in ACTIONS:
-            result = await ACTIONS[action_name](rt, **params)
+            result = [await dispatch_one(rt, sub, actions) for sub in (params.get("actions") or [])]
+        elif action_name in actions:
+            result = await actions[action_name](rt, **params)
         else:
             raise Exception(f"unsupported action: {action_name}")
         return _envelope(version, result)

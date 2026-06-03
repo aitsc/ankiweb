@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from ankiweb.config import Settings
 from ankiweb.ankiconnect.app import create_ankiconnect_app
 from ankiweb.ankiconnect.config import AnkiConnectConfig
-from ankiweb.ankiconnect.registry import ACTION_SPECS
+from ankiweb.ankiconnect.registry import ACTION_SPECS, EXTRA_ACTION_SPECS
 
 
 @pytest.fixture
@@ -37,7 +37,7 @@ def _add(client, front="Q"):
 # --- registry completeness guard: model fields must equal the handler's accepted params ---
 def test_params_model_matches_handler_signature():
     mismatches = []
-    for name, spec in ACTION_SPECS.items():
+    for name, spec in {**ACTION_SPECS, **EXTRA_ACTION_SPECS}.items():  # both namespaces
         if spec.params_model is None:
             continue
         sig = inspect.signature(spec.handler)

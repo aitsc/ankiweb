@@ -9,8 +9,9 @@ from ankiweb.bridge.hub import BridgeHub
 from ankiweb.ankiconnect.runtime import Runtime
 from ankiweb.ankiconnect.cors import allow_origin
 from ankiweb.ankiconnect.dispatch import dispatch_one
-from ankiweb.ankiconnect.rest import build_actions_router
-import ankiweb.ankiconnect.actions  # noqa: F401 — registers actions
+from ankiweb.ankiconnect.rest import build_actions_router, build_extra_actions_router
+import ankiweb.ankiconnect.actions  # noqa: F401 — registers canonical actions
+import ankiweb.ankiconnect.extra_actions  # noqa: F401 — registers /extra_actions/<name>
 
 
 def create_ankiconnect_app(
@@ -82,5 +83,7 @@ def create_ankiconnect_app(
     # Additive typed surface for /docs (one POST /actions/<name> per action). The canonical
     # POST / above is the source of truth; these routes call the same dispatch_one.
     app.include_router(build_actions_router())
+    # ankiweb-original actions: documented + callable at /extra_actions/<name> only.
+    app.include_router(build_extra_actions_router())
 
     return app
