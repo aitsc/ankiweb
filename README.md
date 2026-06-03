@@ -56,7 +56,8 @@ card-template editors (one of the Tools-menu screens ankiweb rebuilds for the we
 ## Requirements
 
 - Python **3.12**
-- `anki==25.9.4` (pinned — the vendored frontend must match this version)
+- `anki==25.9.4` (pinned — the vendored frontend must match this version; the exact upstream
+  Anki/AnkiConnect commits this port was built against are recorded in [UPSTREAM.md](UPSTREAM.md))
 - Node.js (only to build the ~2 KB shell bundle)
 - A conda env is recommended: installing `anki` pulls a newer `protobuf` that can clash
   with other global packages, so keep it isolated.
