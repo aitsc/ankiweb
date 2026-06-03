@@ -190,8 +190,9 @@ dispatcher (so the root surface stays byte-identical to upstream). Currently:
 ### Deck push notifications (Extras)
 
 An **ankiweb-original** feature (not part of the Anki/AnkiConnect port): ankiweb can POST to an
-endpoint of yours whenever a deck's *learnable* status changes — i.e. it gains cards to study
-now, or runs out. Useful for a study bot/agent that should react without polling.
+endpoint of yours whenever a deck's study counts change — i.e. its `new_count`, `learn_count`,
+or `review_count` moves (including bucket shifts that keep the total). Useful for a study
+bot/agent that should react without polling.
 
 Configure it live at **Extras ▾ → Push notifications** (`/notify`) — no env vars, no restart.
 Settings persist to a `notify.json` sidecar next to the collection. Fields:
@@ -206,12 +207,13 @@ Settings persist to a `notify.json` sidecar next to the collection. Fields:
 | Scope | which decks to watch in a nested tree: **Leaf only** (default — last-level decks with no subdecks) or **All levels** (every deck; a parent's counts then include its subdecks) |
 
 The notifier is active only when *enabled* and a URL and both intervals (> 0) are set. Decks are
-identified by **full name** (`A::B::C`). A deck is **learnable** when
-`new_count + learn_count + review_count > 0` (same counts as `getDeckStats` — respects daily
-limits). With *All levels*, a parent deck flips learnable whenever any descendant has cards (its
-counts are the subdeck rollup); *Leaf only* reports just the bottom-level decks. On start, on
-enable, on a URL/scope change, or when you click *Save & re-push all*, every currently-learnable
-deck (in scope) is pushed once so your receiver syncs.
+identified by **full name** (`A::B::C`); counts are the same as `getDeckStats` (respect daily
+limits). A deck notifies whenever its `(new_count, learn_count, review_count)` tuple changes —
+any of the three, even if the total stays the same (the payload's `learnable` field is simply
+`total > 0`, for convenience). With *All levels*, a parent's counts are the subdeck rollup;
+*Leaf only* reports just the bottom-level decks. On start, on enable, on a URL/scope change, or
+when you click *Save & re-push all*, every deck with nonzero counts (in scope) is pushed once so
+your receiver syncs; always-empty decks stay silent.
 
 **Request** ankiweb sends:
 
@@ -230,8 +232,8 @@ Content-Type: application/json
 **Success** = HTTP `200` **and** a JSON body with `ok` exactly `true`. Anything else (non-200,
 missing/false `ok`, non-JSON, timeout, connection error) is treated as a failure and retried
 every *retry interval* until it succeeds. While a notification is unacknowledged, further deck
-changes are coalesced — the resend always carries the **latest** state, and a change that
-reverts to the last acknowledged state sends nothing. Deleted/renamed decks drop silently.
+changes are coalesced — the resend always carries the **latest** counts, and a deck that
+reverts to its last acknowledged counts sends nothing. Deleted/renamed decks drop silently.
 
 ### Night mode
 

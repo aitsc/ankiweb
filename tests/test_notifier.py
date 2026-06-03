@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from ankiweb.notifier import (
     NotifyConfig, NotifyStatus, NotifierState, DeckNotifier,
-    learnable, diff_changes, build_payload, eval_response, snapshot,
+    learnable, counts_sig, diff_changes, build_payload, eval_response, snapshot,
 )
 
 
@@ -26,11 +26,26 @@ def test_diff_changes_empty_baseline_pushes_learnable_only():
                           "new_count": 2, "learn_count": 0, "review_count": 0}
 
 
-def test_diff_changes_flip_both_directions():
+def test_diff_changes_on_any_count_change():
     current = {"A": _counts(did=10), "B": _counts(r=3, did=11)}
-    # A was learnable -> now not; B was not -> now learnable
-    changes = {c["deck"]: c["learnable"] for c in diff_changes(current, {"A": True, "B": False})}
-    assert changes == {"A": False, "B": True}
+    # A went (1,0,0)->(0,0,0); B went (0,0,0)->(0,0,3); both changed
+    out = {c["deck"]: (c["new_count"], c["learn_count"], c["review_count"])
+           for c in diff_changes(current, {"A": (1, 0, 0), "B": (0, 0, 0)})}
+    assert out == {"A": (0, 0, 0), "B": (0, 0, 3)}
+
+
+def test_diff_changes_count_change_while_still_learnable():
+    # NEW trigger: a count change that stays learnable (5 new -> 4 new) now notifies
+    current = {"A": _counts(n=4, did=10)}
+    assert [c["new_count"] for c in diff_changes(current, {"A": (5, 0, 0)})] == [4]
+    # unchanged counts -> no notification
+    assert diff_changes(current, {"A": (4, 0, 0)}) == []
+
+
+def test_diff_changes_bucket_shift_same_total():
+    # a new->learn shift keeps the total (5) but the tuple changes -> notify
+    current = {"A": _counts(n=4, l=1, did=10)}
+    assert diff_changes(current, {"A": (5, 0, 0)})[0]["deck"] == "A"
 
 
 def test_build_payload():
@@ -119,7 +134,7 @@ async def test_tick_failure_does_not_advance_and_retries_latest(tmp_path):
     await n._tick(CFG)
     last = post.calls[-1]["changes"][0]
     assert last["learnable"] is True and last["new_count"] == 5
-    assert n.last_notified == {"A": True}
+    assert n.last_notified == {"A": (5, 0, 0)}
 
 
 @pytest.mark.asyncio
@@ -127,13 +142,13 @@ async def test_tick_flip_then_back_to_acknowledged_nets_no_send(tmp_path):
     snap = {"A": _counts(n=1, did=10)}
     post = FakePost()
     n, _ = _notifier(tmp_path, fetch=lambda: _async(snap), post=post)
-    await n._tick(CFG)                       # success -> receiver acknowledged A learnable
+    await n._tick(CFG)                       # success -> receiver acknowledged A = (1,0,0)
     assert len(post.calls) == 1
-    # A goes not-learnable; the send fails so the receiver still believes "learnable"
+    # A goes empty; the send fails so the receiver still has the old acknowledged counts
     snap["A"] = _counts(did=10)
     post.result = (False, "x")
     await n._tick(CFG)
-    assert n.last_notified == {"A": True}    # unchanged on failure
+    assert n.last_notified == {"A": (1, 0, 0)}  # unchanged on failure
     # A reverts to learnable (== last acknowledged) before any retry succeeds -> nothing to send
     snap["A"] = _counts(n=1, did=10)
     post.result = (True, "")
@@ -148,7 +163,7 @@ async def test_tick_deleted_deck_pruned(tmp_path):
     post = FakePost()
     n, _ = _notifier(tmp_path, fetch=lambda: _async(snap), post=post)
     await n._tick(CFG)
-    assert n.last_notified == {"A": True}
+    assert n.last_notified == {"A": (1, 0, 0)}
     snap.clear()                              # deck A removed
     await n._tick(CFG)
     assert n.last_notified == {}              # pruned silently, no extra POST
