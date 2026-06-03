@@ -14,6 +14,29 @@ import ankiweb.ankiconnect.actions  # noqa: F401 — registers canonical actions
 import ankiweb.ankiconnect.extra_actions  # noqa: F401 — registers /extra_actions/<name>
 
 
+# Group descriptions shown under each tag heading in Swagger (/docs).
+_OPENAPI_TAGS = [
+    {
+        "name": "actions",
+        "description": (
+            "**Native AnkiConnect actions**, documented here for convenience. Each route simply "
+            "forwards to the canonical dispatcher, so it works — but for real integrations prefer "
+            "calling AnkiConnect the standard way: **`POST /`** with a "
+            "`{\"action\", \"version\", \"params\"}` body. That root endpoint is the source of "
+            "truth and stays byte-compatible with existing AnkiConnect clients/scripts."
+        ),
+    },
+    {
+        "name": "extra_actions",
+        "description": (
+            "**ankiweb-original actions — NOT part of AnkiConnect.** These exist only here: call "
+            "**`POST /extra_actions/<name>`**. They are deliberately unknown to the canonical "
+            "`POST /` root (which mirrors upstream AnkiConnect exactly)."
+        ),
+    },
+]
+
+
 def create_ankiconnect_app(
     settings: Settings | None = None,
     service: CollectionService | None = None,
@@ -40,7 +63,7 @@ def create_ankiconnect_app(
             if owns_service:
                 await svc.close()
 
-    app = FastAPI(title="ankiweb-ankiconnect", lifespan=lifespan)
+    app = FastAPI(title="ankiweb-ankiconnect", lifespan=lifespan, openapi_tags=_OPENAPI_TAGS)
 
     def _cors_headers(origin):
         allowed, header = allow_origin(origin, config.cors_origin_list)
