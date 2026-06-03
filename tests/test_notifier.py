@@ -8,8 +8,8 @@ from ankiweb.notifier import (
 )
 
 
-def _counts(n=0, l=0, r=0, did=1):
-    return {"deck_id": did, "new_count": n, "learn_count": l, "review_count": r}
+def _counts(n=0, l=0, r=0, did=1, leaf=True):
+    return {"deck_id": did, "new_count": n, "learn_count": l, "review_count": r, "is_leaf": leaf}
 
 
 # ----- pure logic -----
@@ -235,6 +235,76 @@ async def test_run_survives_fetch_error_and_retries(tmp_path):  # fix #3
     assert not task.done()                                   # the task did NOT die
     assert calls["n"] >= 2                                   # it kept retrying
     assert "collection not open" in state.status.last_error  # error surfaced
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+def test_config_scope_default_and_normalize(tmp_path):
+    assert NotifyConfig().scope == "leaf"
+    p = tmp_path / "n.json"
+    NotifyConfig(scope="all").save(p)
+    assert NotifyConfig.load(p).scope == "all"
+    p.write_text('{"scope": "bogus"}')
+    assert NotifyConfig.load(p).scope == "leaf"  # invalid normalizes to leaf
+
+
+@pytest.mark.asyncio
+async def test_tick_leaf_scope_skips_parents(tmp_path):
+    snap = {"P": _counts(n=1, did=1, leaf=False), "P::C": _counts(n=1, did=2, leaf=True)}
+    post = FakePost()
+    n, state = _notifier(tmp_path, fetch=lambda: _async(snap), post=post)  # CFG.scope == "leaf"
+    await n._tick(CFG)
+    assert {c["deck"] for c in post.calls[0]["changes"]} == {"P::C"}  # parent excluded
+    assert state.status.watching == 1
+
+
+@pytest.mark.asyncio
+async def test_tick_all_scope_includes_parents(tmp_path):
+    snap = {"P": _counts(n=1, did=1, leaf=False), "P::C": _counts(n=1, did=2, leaf=True)}
+    post = FakePost()
+    state = NotifierState(tmp_path / "notify.json")
+    cfg_all = NotifyConfig(enabled=True, url="http://x", poll_sec=60, retry_sec=10, scope="all")
+    state.config = cfg_all
+    n = DeckNotifier(state, fetch=lambda: _async(snap), post=post, now=lambda: 0.0)
+    await n._tick(cfg_all)
+    assert {c["deck"] for c in post.calls[0]["changes"]} == {"P", "P::C"}
+
+
+def test_snapshot_marks_leaf_vs_parent(tmp_path):
+    from anki.collection import Collection
+    col = Collection(str(tmp_path / "c.anki2"))
+    try:
+        did = col.decks.id("Parent::Child")  # creates Parent and Parent::Child
+        m = col.models.by_name("Basic")
+        note = col.new_note(m)
+        note["Front"], note["Back"] = "Q", "A"
+        col.add_note(note, did)
+        snap = snapshot(col)
+        assert snap["Parent"]["is_leaf"] is False
+        assert snap["Parent::Child"]["is_leaf"] is True
+    finally:
+        col.close()
+
+
+@pytest.mark.asyncio
+async def test_run_scope_change_resyncs(tmp_path):
+    snap = {"P": _counts(n=1, did=1, leaf=False), "P::C": _counts(n=1, did=2, leaf=True)}
+    post = FakePost()
+    state = NotifierState(tmp_path / "notify.json")
+    state.config = NotifyConfig(enabled=True, url="http://x", poll_sec=0.01,
+                                retry_sec=0.01, scope="leaf")
+    n = DeckNotifier(state, fetch=lambda: _async(snap), post=post, now=lambda: 0.0)
+    task = asyncio.create_task(n.run())
+    await asyncio.sleep(0.05)
+    seen = lambda: {c["deck"] for call in post.calls for c in call["changes"]}
+    assert seen() == {"P::C"}                       # leaf scope: parent not pushed
+    state.update(NotifyConfig(enabled=True, url="http://x", poll_sec=0.01,
+                              retry_sec=0.01, scope="all"))
+    await asyncio.sleep(0.05)
+    assert "P" in seen()                            # scope change re-synced -> parent pushed
     task.cancel()
     try:
         await task

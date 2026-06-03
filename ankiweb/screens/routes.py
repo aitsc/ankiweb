@@ -114,15 +114,16 @@ def build_screen_router(get_service, get_notifier=None) -> APIRouter:
     @router.post("/notify")
     async def notify_post(action: str = Form("save"), enabled: bool = Form(False),
                           url: str = Form(""), token: str = Form(""),
-                          poll_sec: float = Form(60.0), retry_sec: float = Form(30.0)):
+                          poll_sec: float = Form(60.0), retry_sec: float = Form(30.0),
+                          scope: str = Form("leaf")):
         state = get_notifier()
         if not header_safe(token):
             form = {"enabled": enabled, "url": url, "token": token,
-                    "poll_sec": poll_sec, "retry_sec": retry_sec}
+                    "poll_sec": poll_sec, "retry_sec": retry_sec, "scope": scope}
             return HTMLResponse(render_page("notify", render_notify_html(
                 state, error="Token must be ASCII / latin-1 (it is sent in an HTTP header).",
                 form=form)), status_code=400)
-        state.update(config_from_form(enabled, url, token, poll_sec, retry_sec))
+        state.update(config_from_form(enabled, url, token, poll_sec, retry_sec, scope))
         if action == "resync":
             state.request_resync()  # drop the baseline so all learnable decks re-push
         return RedirectResponse("/notify", status_code=303)
