@@ -277,10 +277,11 @@ async def cards_to_notes(rt, cards=None):
     cards = cards or []
 
     def fn(col):
-        seen = []
-        for cid in cards:
-            nid = col.get_card(cid).nid
-            if nid not in seen:
-                seen.append(nid)
-        return seen
+        if not cards:
+            return []
+        # Match canonical AnkiConnect: a single non-raising SQL query that omits unknown
+        # card ids (instead of looping col.get_card, which raises NotFoundError on a bad id).
+        placeholders = ",".join("?" * len(cards))
+        return col.db.list(
+            "select distinct nid from cards where id in (%s)" % placeholders, *cards)
     return await rt.service.run(fn)

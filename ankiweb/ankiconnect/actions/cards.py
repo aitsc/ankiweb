@@ -1,5 +1,6 @@
 """AnkiConnect card actions."""
 from __future__ import annotations
+from anki.errors import NotFoundError
 from ankiweb.ankiconnect.registry import action
 from ankiweb.ankiconnect.actions._helpers import card_to_info, run_emit
 
@@ -111,7 +112,11 @@ async def set_ease_factors(rt, cards=None, easeFactors=None):
         out = []
         last_op = None
         for cid, factor in zip(cards, easeFactors):
-            c = col.get_card(cid)
+            try:
+                c = col.get_card(cid)
+            except NotFoundError:
+                out.append(False)  # faithful: AnkiConnect appends False for missing cards
+                continue
             c.factor = int(factor)
             last_op = col.update_card(c)
             out.append(True)
@@ -127,7 +132,10 @@ async def set_specific_value_of_card(rt, card=None, keys=None, newValues=None, w
              "odid", "flags", "data"}
 
     def fn(col):
-        c = col.get_card(card)
+        try:
+            c = col.get_card(card)
+        except NotFoundError:
+            return False, None  # faithful: AnkiConnect returns False on a missing card
         out = []
         for key, val in zip(keys, newValues):
             if key in risky and not warning_check:
@@ -195,7 +203,11 @@ async def answer_cards(rt, answers=None):
         last_op = None
         for a in answers:
             cid, ease = a["cardId"], a["ease"]
-            card = col.get_card(cid)
+            try:
+                card = col.get_card(cid)
+            except NotFoundError:
+                out.append(False)  # faithful: AnkiConnect appends False for missing cards
+                continue
             card.start_timer()
             states = col._backend.get_scheduling_states(cid)
             answer = col.sched.build_answer(

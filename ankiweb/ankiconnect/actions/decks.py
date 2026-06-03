@@ -31,7 +31,11 @@ async def get_decks(rt, cards=None):
     def fn(col):
         out: dict[str, list] = {}
         for cid in cards:
-            name = col.decks.name(col.get_card(cid).did)
+            # Match canonical AnkiConnect: look the deck up by SQL (non-raising) instead of
+            # col.get_card (raises on a bad id). A missing card -> did None -> decks.get(None)
+            # returns the Default deck, so unknown ids bucket under "Default" as upstream does.
+            did = col.db.scalar("select did from cards where id = ?", cid)
+            name = col.decks.get(did)["name"]
             out.setdefault(name, []).append(cid)
         return out
     return await rt.service.run(fn)

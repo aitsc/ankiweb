@@ -132,6 +132,13 @@ def test_cards_to_notes(client):
     assert _call(client, "cardsToNotes", cards=cards) == [nid]
 
 
+def test_cards_to_notes_invalid_id(client):
+    nid = _call(client, "addNote", note=_basic(front="c2nbad"))
+    cards = _call(client, "findCards", query="deck:Default")
+    # unknown card id is silently omitted (matches AnkiConnect's SQL), never an error envelope
+    assert _call(client, "cardsToNotes", cards=cards + [99999]) == [nid]
+
+
 def test_notes_mod_time(client):
     nid = _call(client, "addNote", note=_basic(front="mt"))
     res = _call(client, "notesModTime", notes=[nid])
