@@ -328,6 +328,32 @@ async def test_run_scope_change_resyncs(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_run_url_change_resyncs(tmp_path):
+    # changing only the POST URL must re-push all nonzero decks to the new endpoint, even
+    # though their counts did not change (baseline is keyed on (url, scope)).
+    snap = {"A": _counts(n=1, did=1)}
+    post = FakePost()
+    state = NotifierState(tmp_path / "notify.json")
+    state.config = NotifyConfig(enabled=True, url="http://a", poll_sec=0.01,
+                                retry_sec=0.01, scope="leaf")
+    n = DeckNotifier(state, fetch=lambda: _async(snap), post=post, now=lambda: 0.0)
+    task = asyncio.create_task(n.run())
+    await asyncio.sleep(0.05)
+    assert any(c["deck"] == "A" for call in post.calls for c in call["changes"])
+    before = len(post.calls)
+    state.update(NotifyConfig(enabled=True, url="http://b", poll_sec=0.01,
+                              retry_sec=0.01, scope="leaf"))  # only the URL changed
+    await asyncio.sleep(0.05)
+    assert len(post.calls) > before                                  # re-pushed after URL change
+    assert any(c["deck"] == "A" for c in post.calls[-1]["changes"])  # carries the nonzero deck
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio
 async def test_run_zeros_status_when_disabled(tmp_path):  # fix #2
     state = NotifierState(tmp_path / "notify.json")  # disabled by default
     state.status.watching, state.status.learnable, state.status.pending = 5, 3, 2
