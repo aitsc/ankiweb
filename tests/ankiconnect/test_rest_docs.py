@@ -60,6 +60,15 @@ def test_openapi_has_a_route_per_action(client):
     assert len(routed) >= 121  # the full ankiweb action surface
 
 
+def test_openapi_tag_descriptions(client):
+    tags = {t["name"]: t.get("description", "")
+            for t in client.get("/openapi.json").json().get("tags", [])}
+    assert "actions" in tags and "extra_actions" in tags
+    assert "Native AnkiConnect actions" in tags["actions"] and "POST /" in tags["actions"]
+    assert "NOT part of AnkiConnect" in tags["extra_actions"]
+    assert "/extra_actions/" in tags["extra_actions"]
+
+
 def test_openapi_distinct_request_schemas(client):
     schema = client.get("/openapi.json").json()
     comps = schema["components"]["schemas"]
