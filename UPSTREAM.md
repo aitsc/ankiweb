@@ -51,6 +51,12 @@ These are the local checkouts the port was written against (read for understandi
    any new ones. ankiweb already covers ~the full action surface minus sync.
 2. The reference commit above added a *"set fields in the Add Note dialog"* endpoint — already
    mirrored by ankiweb's `guiAddNoteSetData` (sub-project D6).
+3. **OpenAPI schemas are ankiweb-specific** (upstream AnkiConnect has no `/docs`). A new action
+   needs a `<Action>Params` model in `ankiweb/ankiconnect/schemas/<file>.py` wired via
+   `@action(..., params=...)`; until then it falls back to a loose body. The
+   `test_params_model_matches_handler_signature` test fails if a model's fields drift from its
+   handler signature, so it flags any action whose params changed upstream. See
+   `docs/superpowers/specs/2026-06-03-ankiconnect-openapi-schemas-design.md`.
 
 ---
 

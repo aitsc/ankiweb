@@ -1,6 +1,14 @@
 from __future__ import annotations
 from ankiweb.ankiconnect.registry import action
 from ankiweb.ankiconnect.actions._helpers import run_emit, build_note
+from ankiweb.ankiconnect.schemas.gui import (
+    GuiReviewActiveParams, GuiCurrentCardParams, GuiStartCardTimerParams, GuiShowQuestionParams,
+    GuiShowAnswerParams, GuiAnswerCardParams, GuiDeckBrowserParams, GuiDeckOverviewParams,
+    GuiDeckReviewParams, GuiUndoParams, GuiCheckDatabaseParams, GuiBrowseParams,
+    GuiSelectCardParams, GuiSelectNoteParams, GuiSelectedNotesParams, GuiPlayAudioParams,
+    GuiAddNoteSetDataParams, GuiEditNoteParams, GuiAddCardsParams, GuiImportFileParams,
+    GuiExitAnkiParams,
+)
 
 
 def _ui(rt):
@@ -8,12 +16,13 @@ def _ui(rt):
 
 
 # ---------- reviewer state queries ----------
-@action("guiReviewActive")
+@action("guiReviewActive", params=GuiReviewActiveParams, returns=bool,
+        summary="Is the reviewer active")
 async def gui_review_active(rt):
     return _ui(rt).review_active
 
 
-@action("guiCurrentCard")
+@action("guiCurrentCard", params=GuiCurrentCardParams, summary="Info for the current reviewer card")
 async def gui_current_card(rt):
     ui = _ui(rt)
     if not ui.review_active:
@@ -55,7 +64,8 @@ async def gui_current_card(rt):
 
 
 # ---------- reviewer control (drive the real reviewer handler; keeps the browser in sync) ----------
-@action("guiStartCardTimer")
+@action("guiStartCardTimer", params=GuiStartCardTimerParams, returns=bool,
+        summary="Start the current card timer")
 async def gui_start_card_timer(rt):
     if not _ui(rt).review_active:
         return False
@@ -63,7 +73,8 @@ async def gui_start_card_timer(rt):
     return True
 
 
-@action("guiShowQuestion")
+@action("guiShowQuestion", params=GuiShowQuestionParams, returns=bool,
+        summary="Show the question side")
 async def gui_show_question(rt):
     if not _ui(rt).review_active:
         return False
@@ -71,7 +82,7 @@ async def gui_show_question(rt):
     return True
 
 
-@action("guiShowAnswer")
+@action("guiShowAnswer", params=GuiShowAnswerParams, returns=bool, summary="Show the answer side")
 async def gui_show_answer(rt):
     if not _ui(rt).review_active:
         return False
@@ -79,7 +90,8 @@ async def gui_show_answer(rt):
     return True
 
 
-@action("guiAnswerCard")
+@action("guiAnswerCard", params=GuiAnswerCardParams, returns=bool,
+        summary="Answer the current card")
 async def gui_answer_card(rt, ease=None):
     ui = _ui(rt)
     if not ui.review_active or ui.side != "answer":
@@ -97,13 +109,14 @@ async def _navigate(rt, url):
     await rt.hub.push_call(target, "ankiwebNavigate", [url])
 
 
-@action("guiDeckBrowser")
+@action("guiDeckBrowser", params=GuiDeckBrowserParams, summary="Open the deck browser")
 async def gui_deck_browser(rt):
     await _navigate(rt, "/deckbrowser")
     return None
 
 
-@action("guiDeckOverview")
+@action("guiDeckOverview", params=GuiDeckOverviewParams, returns=bool,
+        summary="Open a deck overview")
 async def gui_deck_overview(rt, name=None):
     did = await rt.service.run(lambda col: col.decks.id_for_name(name or ""))
     if did is None:
@@ -113,7 +126,7 @@ async def gui_deck_overview(rt, name=None):
     return True
 
 
-@action("guiDeckReview")
+@action("guiDeckReview", params=GuiDeckReviewParams, returns=bool, summary="Start reviewing a deck")
 async def gui_deck_review(rt, name=None):
     did = await rt.service.run(lambda col: col.decks.id_for_name(name or ""))
     if did is None:
@@ -125,7 +138,7 @@ async def gui_deck_review(rt, name=None):
 
 
 # ---------- backend ops (work headless; broadcast so open screens refresh) ----------
-@action("guiUndo")
+@action("guiUndo", params=GuiUndoParams, summary="Undo the last operation")
 async def gui_undo(rt):
     def do(col):
         from anki.errors import UndoEmpty
@@ -138,14 +151,16 @@ async def gui_undo(rt):
     return await run_emit(rt, do)
 
 
-@action("guiCheckDatabase")
+@action("guiCheckDatabase", params=GuiCheckDatabaseParams, returns=bool,
+        summary="Check the database integrity")
 async def gui_check_database(rt):
     await rt.service.run(lambda col: col.fix_integrity())
     return True
 
 
 # ---------- degraded browser-domain actions (faithful to AnkiConnect's "no window" values) ----------
-@action("guiBrowse")
+@action("guiBrowse", params=GuiBrowseParams, returns=list[int],
+        summary="Open the browser and search")
 async def gui_browse(rt, query=None, reorderCards=None):
     if reorderCards is not None:  # reference checks 1-3; columnId-resolves (4) needs the table (Plan D)
         if not isinstance(reorderCards, dict):
@@ -167,7 +182,8 @@ async def gui_browse(rt, query=None, reorderCards=None):
     return cids
 
 
-@action("guiSelectCard")
+@action("guiSelectCard", params=GuiSelectCardParams, returns=bool,
+        summary="Select a card in the browser")
 async def gui_select_card(rt, card=None):
     ui = _ui(rt)
     if not ui.browser_open:   # no Browser window open → reference returns False
@@ -184,18 +200,21 @@ async def gui_select_card(rt, card=None):
     return True
 
 
-@action("guiSelectNote")
+@action("guiSelectNote", params=GuiSelectNoteParams, returns=bool,
+        summary="Select a card in the browser (alias)")
 async def gui_select_note(rt, note=None):
     # deprecated alias: AnkiConnect forwards to guiSelectCard (selects by CARD id)
     return await gui_select_card(rt, card=note)
 
 
-@action("guiSelectedNotes")
+@action("guiSelectedNotes", params=GuiSelectedNotesParams, returns=list[int],
+        summary="Selected note ids in the browser")
 async def gui_selected_notes(rt):
     return list(_ui(rt).selected_note_ids)
 
 
-@action("guiPlayAudio")
+@action("guiPlayAudio", params=GuiPlayAudioParams, returns=bool,
+        summary="Replay the current card audio")
 async def gui_play_audio(rt):
     ui = _ui(rt)
     if not ui.review_active:
@@ -205,7 +224,8 @@ async def gui_play_audio(rt):
     return True
 
 
-@action("guiAddNoteSetData")
+@action("guiAddNoteSetData", params=GuiAddNoteSetDataParams,
+        summary="Prefill the open Add Note dialog")
 async def gui_add_note_set_data(rt, note=None, append=False):
     # Live-prefill the OPEN Add dialog (the /add page, connected at context=="add").
     # When it isn't open, return AnkiConnect's "dialog not open" payload.
@@ -220,7 +240,7 @@ async def gui_add_note_set_data(rt, note=None, append=False):
     return None
 
 
-@action("guiEditNote")
+@action("guiEditNote", params=GuiEditNoteParams, summary="Open the edit dialog for a note")
 async def gui_edit_note(rt, note=None):
     screen = _ui(rt).current_screen
     if screen:
@@ -228,7 +248,8 @@ async def gui_edit_note(rt, note=None):
     return None
 
 
-@action("guiAddCards")
+@action("guiAddCards", params=GuiAddCardsParams, returns=int,
+        summary="Preset the Add Cards dialog")
 async def gui_add_cards(rt, note=None):
     # The interactive Add dialog is Plan D. Preserve the contract (returns an int note id)
     # without the surprising side effect of actually adding: validate deck/model/fields and
@@ -254,12 +275,12 @@ async def gui_add_cards(rt, note=None):
 
 
 # ---------- server-incompatible (refuse / no-op) ----------
-@action("guiImportFile")
+@action("guiImportFile", params=GuiImportFileParams, summary="Invoke the import dialog")
 async def gui_import_file(rt, path=None):
     raise Exception("guiImportFile is not supported in ankiweb (no GUI file picker)")
 
 
-@action("guiExitAnki")
+@action("guiExitAnki", params=GuiExitAnkiParams, summary="Schedule a graceful Anki shutdown")
 async def gui_exit_anki(rt):
     # Never shut down the shared local server on a client request (spec §4). No-op.
     return None

@@ -1,11 +1,17 @@
 from __future__ import annotations
 import time
 from ankiweb.ankiconnect.registry import action
+from ankiweb.ankiconnect.schemas.stats import (
+    GetNumCardsReviewedTodayParams, GetNumCardsReviewedByDayParams, GetCollectionStatsHTMLParams,
+    CardReviewsParams, GetReviewsOfCardsParams, GetLatestReviewIDParams, InsertReviewsParams,
+    GetDeckStatsParams,
+)
 
 _REVLOG_COLS = "id, cid, usn, ease, ivl, lastIvl, factor, time, type"
 
 
-@action("getNumCardsReviewedToday")
+@action("getNumCardsReviewedToday", params=GetNumCardsReviewedTodayParams, returns=int,
+        summary="Count cards reviewed today")
 async def get_num_cards_reviewed_today(rt):
     def fn(col):
         return col.db.scalar("select count() from revlog where id > ?",
@@ -13,7 +19,8 @@ async def get_num_cards_reviewed_today(rt):
     return await rt.service.run(fn)
 
 
-@action("getNumCardsReviewedByDay")
+@action("getNumCardsReviewedByDay", params=GetNumCardsReviewedByDayParams,
+        summary="Count cards reviewed per day")
 async def get_num_cards_reviewed_by_day(rt):
     def fn(col):
         offset = int(time.strftime("%H", time.localtime(col.sched.day_cutoff))) * 3600
@@ -23,7 +30,8 @@ async def get_num_cards_reviewed_by_day(rt):
     return await rt.service.run(fn)
 
 
-@action("getCollectionStatsHTML")
+@action("getCollectionStatsHTML", params=GetCollectionStatsHTMLParams, returns=str,
+        summary="Render collection stats as HTML")
 async def get_collection_stats_html(rt, wholeCollection=True):
     def fn(col):
         stats = col.stats()
@@ -35,7 +43,7 @@ async def get_collection_stats_html(rt, wholeCollection=True):
     return await rt.service.run(fn)
 
 
-@action("cardReviews")
+@action("cardReviews", params=CardReviewsParams, summary="Card reviews for a deck after an id")
 async def card_reviews(rt, deck=None, startID=0):
     def fn(col):
         return col.db.all(
@@ -45,7 +53,7 @@ async def card_reviews(rt, deck=None, startID=0):
     return await rt.service.run(fn)
 
 
-@action("getReviewsOfCards")
+@action("getReviewsOfCards", params=GetReviewsOfCardsParams, summary="Reviews for each card id")
 async def get_reviews_of_cards(rt, cards=None):
     cards = [int(c) for c in (cards or [])]
     cols = ["cid", "id", "usn", "ease", "ivl", "lastIvl", "factor", "time", "type"]
@@ -62,7 +70,8 @@ async def get_reviews_of_cards(rt, cards=None):
     return await rt.service.run(fn)
 
 
-@action("getLatestReviewID")
+@action("getLatestReviewID", params=GetLatestReviewIDParams, returns=int,
+        summary="Latest review id for a deck")
 async def get_latest_review_id(rt, deck=None):
     def fn(col):
         return col.db.scalar(
@@ -71,7 +80,7 @@ async def get_latest_review_id(rt, deck=None):
     return await rt.service.run(fn)
 
 
-@action("insertReviews")
+@action("insertReviews", params=InsertReviewsParams, summary="Insert raw revlog rows")
 async def insert_reviews(rt, reviews=None):
     rows = [tuple(r) for r in (reviews or [])]
 
@@ -98,7 +107,7 @@ def _deck_stats_json(node):
     return d
 
 
-@action("getDeckStats")
+@action("getDeckStats", params=GetDeckStatsParams, summary="Statistics for the given decks")
 async def get_deck_stats(rt, decks=None):
     names = list(decks or [])
 

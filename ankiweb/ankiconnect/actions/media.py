@@ -4,6 +4,10 @@ import fnmatch
 import hashlib
 import os
 from ankiweb.ankiconnect.registry import action
+from ankiweb.ankiconnect.schemas.media import (
+    StoreMediaFileParams, RetrieveMediaFileParams, GetMediaFilesNamesParams,
+    GetMediaDirPathParams, DeleteMediaFileParams,
+)
 
 
 def _fetch_bytes(data=None, path=None, url=None):
@@ -28,14 +32,14 @@ def _store(col, filename, data=None, path=None, url=None, skipHash=None, deleteE
     return col.media.write_data(filename, raw)
 
 
-@action("storeMediaFile")
+@action("storeMediaFile", params=StoreMediaFileParams, summary="Store a media file")
 async def store_media_file(rt, filename=None, data=None, path=None, url=None,
                            skipHash=None, deleteExisting=True):
     return await rt.service.run(
         lambda col: _store(col, filename, data, path, url, skipHash, deleteExisting))
 
 
-@action("retrieveMediaFile")
+@action("retrieveMediaFile", params=RetrieveMediaFileParams, summary="Retrieve a media file")
 async def retrieve_media_file(rt, filename=None):
     def fn(col):
         safe = os.path.basename(filename or "")   # ref normalizes; prevents '../' traversal
@@ -47,7 +51,8 @@ async def retrieve_media_file(rt, filename=None):
     return await rt.service.run(fn)
 
 
-@action("getMediaFilesNames")
+@action("getMediaFilesNames", params=GetMediaFilesNamesParams, returns=list[str],
+        summary="List media filenames by pattern")
 async def get_media_files_names(rt, pattern="*"):
     def fn(col):
         names = os.listdir(col.media.dir())
@@ -55,12 +60,13 @@ async def get_media_files_names(rt, pattern="*"):
     return await rt.service.run(fn)
 
 
-@action("getMediaDirPath")
+@action("getMediaDirPath", params=GetMediaDirPathParams, returns=str,
+        summary="Get the media folder path")
 async def get_media_dir_path(rt):
     return await rt.service.run(lambda col: col.media.dir())
 
 
-@action("deleteMediaFile")
+@action("deleteMediaFile", params=DeleteMediaFileParams, summary="Delete a media file")
 async def delete_media_file(rt, filename=None):
     await rt.service.run(lambda col: col.media.trash_files([filename]))
     return None

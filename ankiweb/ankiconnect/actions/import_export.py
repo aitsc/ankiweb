@@ -1,9 +1,13 @@
 from __future__ import annotations
 from ankiweb.ankiconnect.registry import action
 from ankiweb.ankiconnect.actions._helpers import run_emit
+from ankiweb.ankiconnect.schemas.import_export import (
+    ExportPackageParams, ImportPackageParams,
+)
 
 
-@action("exportPackage")
+@action("exportPackage", params=ExportPackageParams, returns=bool,
+        summary="Export a deck to a .apkg file")
 async def export_package(rt, deck=None, path=None, includeSched=False):
     """Export a deck to a .apkg at a server-side path. Returns True, or False if the
     deck name is unknown (faithful to AnkiConnect). Uses the modern backend export
@@ -23,7 +27,8 @@ async def export_package(rt, deck=None, path=None, includeSched=False):
     return await rt.service.run(fn)
 
 
-@action("importPackage")
+@action("importPackage", params=ImportPackageParams, returns=bool,
+        summary="Import a .apkg file into the collection")
 async def import_package(rt, path=None):
     """Import a .apkg from a server-side path. Returns True; broadcasts the import's
     OpChanges so an open web UI refreshes. Uses the modern backend import (the legacy
