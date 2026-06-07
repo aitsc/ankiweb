@@ -17,7 +17,12 @@ _STYLE = (
     "#browser-main{display:flex;align-items:flex-start}"
     "#sidebar{width:200px;padding:6px;border-right:1px solid #ccc}"
     "#sidebar .side-section{font-weight:bold;margin-top:8px}"
-    "#sidebar .side-item{display:block;padding:2px 4px;color:#06c;text-decoration:none}"
+    # Long deck/tag names (esp. deep "a::b::c" paths) used to overflow the fixed-width sidebar and
+    # paint over the results table. Clip to one line with an ellipsis; direction:rtl keeps the
+    # *leaf* segment visible (truncating the shared prefix) so siblings stay distinguishable, and
+    # text-align:left keeps short names left-aligned. The full name is on the title= tooltip.
+    "#sidebar .side-item{display:block;padding:2px 4px;color:#06c;text-decoration:none;"
+    "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}"
     "#sidebar .side-item:hover{background:#eef}"
     "#results-wrap{flex:1;overflow:auto;max-height:80vh}"
     "#results{width:100%;border-collapse:collapse}"
@@ -35,12 +40,14 @@ def _sidebar_html(col) -> str:
     parts = [f"<div class='side-section'>{tr.actions_decks()}</div>"]
     for d in col.decks.all_names_and_ids():
         parts.append(
-            f"<a class='side-item' href='#' onclick=\"return pycmd('searchdeck:{d.id}')\">"
+            f"<a class='side-item' title=\"{html.escape(d.name)}\" href='#' "
+            f"onclick=\"return pycmd('searchdeck:{d.id}')\">"
             f"{html.escape(d.name)}</a>")
     parts.append(f"<div class='side-section'>{tr.editing_tags()}</div>")
     for t in col.tags.all():
         parts.append(
-            f"<a class='side-item' href='#' onclick=\"return pycmd('searchtag:{html.escape(t)}')\">"
+            f"<a class='side-item' title=\"{html.escape(t)}\" href='#' "
+            f"onclick=\"return pycmd('searchtag:{html.escape(t)}')\">"
             f"{html.escape(t)}</a>")
     return "".join(parts)
 
