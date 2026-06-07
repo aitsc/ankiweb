@@ -76,3 +76,51 @@ def test_select_all_and_suspend(live_server_browse):
         page.wait_for_function(
             "document.querySelectorAll('#results-body tr.selected').length===0", timeout=6000)
         browser.close()
+
+
+@pytest.fixture
+def live_server_longdeck(tmp_path: Path):
+    col_path = tmp_path / "longdeck.anki2"
+    col = Collection(str(col_path))
+    # A deep, unbreakable path far wider than the 200px sidebar — the case that used to overflow.
+    long_name = "prefix_" + "a" * 40 + "::middle_" + "b" * 40 + "::leaf_zzz"
+    try:
+        did = col.decks.id(long_name)
+        n = col.new_note(col.models.by_name("Basic")); n["Front"] = "q"; n["Back"] = "a"
+        col.add_note(n, did)
+    finally:
+        col.close()
+    settings = Settings(collection_path=col_path, port=8129)
+    server = uvicorn.Server(uvicorn.Config(create_app(settings), host="127.0.0.1",
+                                           port=8129, log_level="warning"))
+    t = threading.Thread(target=server.run, daemon=True); t.start()
+    deadline = time.monotonic() + 10
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("server did not start")
+        time.sleep(0.05)
+    yield "http://127.0.0.1:8129", long_name
+    server.should_exit = True; t.join(timeout=5)
+
+
+def test_browse_sidebar_long_name_truncated(live_server_longdeck):
+    base, long_name = live_server_longdeck
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(f"{base}/browse")
+        page.wait_for_selector("#sidebar .side-item", timeout=6000)
+        item = page.get_by_title(long_name, exact=True)
+        # the full name is preserved on the hover tooltip even though the visible text is clipped
+        assert item.get_attribute("title") == long_name
+        geo = item.evaluate(
+            "el => { const cs = getComputedStyle(el);"
+            " return {scrollW: el.scrollWidth, clientW: el.clientWidth,"
+            "  overflowX: cs.overflowX, textOverflow: cs.textOverflow,"
+            "  whiteSpace: cs.whiteSpace}; }")
+        # genuinely clipped (content far wider than its box) instead of spilling over the results
+        assert geo["scrollW"] > geo["clientW"]
+        assert geo["overflowX"] == "hidden"
+        assert geo["textOverflow"] == "ellipsis"
+        assert geo["whiteSpace"] == "nowrap"
+        browser.close()
