@@ -17,8 +17,11 @@ async def remove_duplicate_notes(rt, deck=None, deckId=None, dryRun=False):
     statistics without deleting. ankiweb-original: reachable only at
     /extra_actions/removeDuplicateNotes, never via the canonical POST /."""
     def fn(col):
-        # resolve the deck: a valid deckId wins, else fall back to the name
-        did = deckId if (deckId is not None and col.decks.get(deckId) is not None) else None
+        # resolve the deck: a valid deckId wins, else fall back to the name.
+        # default=False is REQUIRED: col.decks.get(id) otherwise returns the Default deck for
+        # ANY unknown id, so a bogus deckId would resolve to a phantom scope and shadow `deck`.
+        did = deckId if (deckId is not None
+                         and col.decks.get(deckId, default=False) is not None) else None
         name = col.decks.name(did) if did is not None else None
         if name is None and deck:
             d = col.decks.by_name(deck)

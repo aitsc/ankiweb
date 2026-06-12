@@ -231,3 +231,17 @@ def test_remove_duplicate_notes_no_duplicates(client):
 def test_remove_duplicate_notes_deck_not_found(client):
     r = _post(client, "/extra_actions/removeDuplicateNotes", deck="NoSuchDeck")
     assert r["result"] is None and "deck was not found" in r["error"]
+
+
+def test_remove_duplicate_notes_bad_deck_id(client):
+    # a bogus deckId must NOT resolve to a phantom deck (col.decks.get defaults to the Default
+    # deck for unknown ids) -> it errors when no name is given...
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deckId=99999999)
+    assert r["result"] is None and "deck was not found" in r["error"]
+    # ...and an invalid deckId does not shadow a valid deck name (falls back to the name)
+    _post(client, "/actions/createDeck", deck="DupBad")
+    _add_note(client, "DupBad", "Basic", {"Front": "Q", "Back": "A"})
+    _add_note(client, "DupBad", "Basic", {"Front": "Q", "Back": "A"})
+    r2 = _post(client, "/extra_actions/removeDuplicateNotes",
+               deckId=99999999, deck="DupBad")["result"]
+    assert r2["deck"] == "DupBad" and r2["deleted"] == 1
