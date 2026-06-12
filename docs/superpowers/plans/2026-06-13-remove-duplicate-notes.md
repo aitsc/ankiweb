@@ -79,7 +79,7 @@ def test_remove_duplicate_notes_dry_run(client):
     b = _add_note(client, "DupDry", "Basic", {"Front": "Q", "Back": "A"})
     r = _post(client, "/extra_actions/removeDuplicateNotes", deck="DupDry", dryRun=True)["result"]
     assert r["dryRun"] is True
-    assert r["duplicateGroups"] == 1 and r["duplicateNotes"] == 2
+    assert r["duplicateGroups"] == 1 and r["duplicateNotes"] == 1  # 2 identical -> 1 redundant
     assert r["deleted"] == 0                                 # nothing removed
     remaining = client.post("/actions/findNotes", json={"query": "deck:DupDry"}).json()["result"]
     assert sorted(remaining) == sorted([a, b])
