@@ -31,6 +31,14 @@ def _model_names(client):
     return client.post("/actions/modelNames", json={}).json()["result"]
 
 
+def _add_note(client, deck, model, fields):
+    """Add a note (always allowing duplicates) and return its noteId."""
+    r = _post(client, "/actions/addNote",
+              note={"deckName": deck, "modelName": model, "fields": fields,
+                    "options": {"allowDuplicate": True}})
+    return r["result"]
+
+
 def test_delete_model_unused(client):
     assert "Basic (and reversed card)" in _model_names(client)
     r = _post(client, "/extra_actions/deleteModel", modelName="Basic (and reversed card)")
@@ -169,3 +177,134 @@ def test_notify_config_in_openapi(client):
     assert "/extra_actions/getNotifyConfig" in paths
     assert "/extra_actions/setNotifyConfig" in paths
     assert "/actions/setNotifyConfig" not in paths  # extra-only, not a canonical action
+
+
+# ----- removeDuplicateNotes (all-fields, deck-scoped de-duplication) -----
+def test_remove_duplicate_notes_keeps_oldest(client):
+    _post(client, "/actions/createDeck", deck="Dup")
+    a = _add_note(client, "Dup", "Basic", {"Front": "Q", "Back": "A"})
+    b = _add_note(client, "Dup", "Basic", {"Front": "Q", "Back": "A"})
+    c = _add_note(client, "Dup", "Basic", {"Front": "Q", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="Dup")["result"]
+    assert r["duplicateGroups"] == 1
+    assert r["duplicateNotes"] == 2
+    assert r["deleted"] == 2
+    assert r["dryRun"] is False
+    assert r["notesScanned"] == 3
+    assert r["groups"][0]["model"] == "Basic"
+    assert r["groups"][0]["kept"] == a                      # oldest survives
+    assert r["groups"][0]["deleted"] == [b, c]              # newer copies, ascending nid
+    remaining = client.post("/actions/findNotes", json={"query": "deck:Dup"}).json()["result"]
+    assert remaining == [a]
+
+
+def test_remove_duplicate_notes_dry_run(client):
+    _post(client, "/actions/createDeck", deck="DupDry")
+    a = _add_note(client, "DupDry", "Basic", {"Front": "Q", "Back": "A"})
+    b = _add_note(client, "DupDry", "Basic", {"Front": "Q", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="DupDry", dryRun=True)["result"]
+    assert r["dryRun"] is True
+    assert r["duplicateGroups"] == 1 and r["duplicateNotes"] == 1  # 2 identical -> 1 redundant
+    assert r["deleted"] == 0                                 # nothing removed
+    remaining = client.post("/actions/findNotes", json={"query": "deck:DupDry"}).json()["result"]
+    assert sorted(remaining) == sorted([a, b])
+
+
+def test_remove_duplicate_notes_by_id(client):
+    did = _post(client, "/actions/createDeck", deck="DupId")["result"]
+    _add_note(client, "DupId", "Basic", {"Front": "Q", "Back": "A"})
+    _add_note(client, "DupId", "Basic", {"Front": "Q", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deckId=did)["result"]
+    assert r["deckId"] == did and r["deck"] == "DupId"
+    assert r["deleted"] == 1
+
+
+def test_remove_duplicate_notes_no_duplicates(client):
+    _post(client, "/actions/createDeck", deck="Uniq")
+    _add_note(client, "Uniq", "Basic", {"Front": "Q1", "Back": "A"})
+    _add_note(client, "Uniq", "Basic", {"Front": "Q2", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="Uniq")["result"]
+    assert r["duplicateGroups"] == 0 and r["duplicateNotes"] == 0 and r["deleted"] == 0
+    assert r["groups"] == []
+
+
+def test_remove_duplicate_notes_deck_not_found(client):
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="NoSuchDeck")
+    assert r["result"] is None and "deck was not found" in r["error"]
+
+
+def test_remove_duplicate_notes_bad_deck_id(client):
+    # a bogus deckId must NOT resolve to a phantom deck (col.decks.get defaults to the Default
+    # deck for unknown ids) -> it errors when no name is given...
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deckId=99999999)
+    assert r["result"] is None and "deck was not found" in r["error"]
+    # ...and an invalid deckId does not shadow a valid deck name (falls back to the name)
+    _post(client, "/actions/createDeck", deck="DupBad")
+    _add_note(client, "DupBad", "Basic", {"Front": "Q", "Back": "A"})
+    _add_note(client, "DupBad", "Basic", {"Front": "Q", "Back": "A"})
+    r2 = _post(client, "/extra_actions/removeDuplicateNotes",
+               deckId=99999999, deck="DupBad")["result"]
+    assert r2["deck"] == "DupBad" and r2["deleted"] == 1
+
+
+def test_remove_duplicate_notes_all_fields_participate(client):
+    # same first field, different second field -> NOT duplicates (built-in find_dupes WOULD
+    # flag these because it only compares the first field)
+    _post(client, "/actions/createDeck", deck="AllF")
+    a = _add_note(client, "AllF", "Basic", {"Front": "Q", "Back": "A1"})
+    b = _add_note(client, "AllF", "Basic", {"Front": "Q", "Back": "A2"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="AllF")["result"]
+    assert r["duplicateGroups"] == 0 and r["deleted"] == 0
+    remaining = client.post("/actions/findNotes", json={"query": "deck:AllF"}).json()["result"]
+    assert sorted(remaining) == sorted([a, b])
+
+
+def test_remove_duplicate_notes_cross_notetype_not_merged(client):
+    # identical field values but different note types -> NOT duplicates
+    _post(client, "/actions/createDeck", deck="XType")
+    a = _add_note(client, "XType", "Basic", {"Front": "Q", "Back": "A"})
+    b = _add_note(client, "XType", "Basic (and reversed card)", {"Front": "Q", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="XType")["result"]
+    assert r["duplicateGroups"] == 0 and r["deleted"] == 0
+    remaining = client.post("/actions/findNotes", json={"query": "deck:XType"}).json()["result"]
+    assert sorted(remaining) == sorted([a, b])
+
+
+def test_remove_duplicate_notes_includes_subdecks(client):
+    _post(client, "/actions/createDeck", deck="Parent")
+    _post(client, "/actions/createDeck", deck="Parent::Child")
+    a = _add_note(client, "Parent", "Basic", {"Front": "S", "Back": "B"})
+    b = _add_note(client, "Parent::Child", "Basic", {"Front": "S", "Back": "B"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="Parent")["result"]
+    assert r["duplicateGroups"] == 1 and r["deleted"] == 1
+    assert r["groups"][0]["kept"] == a              # oldest (in Parent) kept
+    assert r["groups"][0]["deleted"] == [b]         # subdeck copy removed
+    remaining = client.post("/actions/findNotes", json={"query": "deck:Parent"}).json()["result"]
+    assert remaining == [a]
+
+
+def test_remove_duplicate_notes_strip_html_equivalent(client):
+    # HTML-different but strip-equivalent first field -> duplicates
+    _post(client, "/actions/createDeck", deck="Strip")
+    a = _add_note(client, "Strip", "Basic", {"Front": "Q", "Back": "A"})
+    b = _add_note(client, "Strip", "Basic", {"Front": "<b>Q</b>", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="Strip")["result"]
+    assert r["duplicateGroups"] == 1 and r["deleted"] == 1
+    assert r["groups"][0]["kept"] == a
+
+
+def test_remove_duplicate_notes_not_on_canonical_root(client):
+    # the canonical POST / dispatcher must NOT know removeDuplicateNotes
+    body = client.post("/", json={"action": "removeDuplicateNotes", "version": 6,
+                                  "params": {"deck": "Default"}}).json()
+    assert body["result"] is None and "unsupported action" in body["error"]
+    # and it is not a typed /actions/ route either
+    assert client.post("/actions/removeDuplicateNotes", json={"deck": "x"}).status_code == 404
+
+
+def test_remove_duplicate_notes_in_openapi(client):
+    schema = client.get("/openapi.json").json()
+    assert "/extra_actions/removeDuplicateNotes" in schema["paths"]
+    assert "/actions/removeDuplicateNotes" not in schema["paths"]
+    assert "RemoveDuplicateNotesParams" in schema["components"]["schemas"]
+    assert "extra_actions" in schema["paths"]["/extra_actions/removeDuplicateNotes"]["post"]["tags"]
