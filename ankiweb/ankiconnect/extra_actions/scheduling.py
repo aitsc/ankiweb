@@ -24,7 +24,10 @@ async def extend_card_limits(rt, deck=None, deckId=None, new=0, review=0):
     import anki.scheduler_pb2 as sp
 
     def fn(col):
-        did = deckId if (deckId is not None and col.decks.get(deckId) is not None) else None
+        # default=False is REQUIRED: col.decks.get(id) otherwise returns the Default deck for
+        # ANY unknown id, so a bogus deckId would silently adjust the wrong deck's limits.
+        did = deckId if (deckId is not None
+                         and col.decks.get(deckId, default=False) is not None) else None
         if did is None and deck:
             d = col.decks.by_name(deck)
             did = d["id"] if d is not None else None

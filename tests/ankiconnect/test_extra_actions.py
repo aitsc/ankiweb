@@ -112,6 +112,13 @@ def test_extend_card_limits_deck_not_found(client):
     assert r["result"] is None and "deck was not found" in r["error"]
 
 
+def test_extend_card_limits_bad_deck_id(client):
+    # a bogus deckId must NOT resolve to the Default deck (col.decks.get returns it for unknown
+    # ids) -> it errors instead of silently adjusting the wrong deck's limits
+    r = _post(client, "/extra_actions/extendCardLimits", deckId=99999999, new=5)
+    assert r["result"] is None and "deck was not found" in r["error"]
+
+
 def test_extend_card_limits_not_on_root(client):
     body = client.post("/", json={"action": "extendCardLimits", "version": 6,
                                   "params": {"deck": "Default", "new": 1}}).json()
