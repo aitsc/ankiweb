@@ -31,8 +31,11 @@ async def remove_duplicate_notes(rt, deck=None, deckId=None, dryRun=False):
             raise Exception("deck was not found: " + str(deck if deck else deckId))
 
         nids = col.find_notes(col.build_search_string(SearchNode(deck=name)))
+        # order by id: makes the group list order (and each group's members) deterministic
+        # oldest-first, so the response is stable regardless of SQLite's row order.
         rows = col.db.all(
-            f"select id, mid, flds from notes where id in {ids2str(nids)}") if nids else []
+            f"select id, mid, flds from notes where id in {ids2str(nids)} order by id") if nids \
+            else []
 
         groups: dict[tuple, list[int]] = {}
         for nid, mid, flds in rows:
