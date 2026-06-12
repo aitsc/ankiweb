@@ -5,5 +5,6 @@ deliberately NOT registered in the canonical ACTIONS, so the root POST / dispatc
 them as unsupported. Keeps the canonical AnkiConnect surface byte-identical to upstream.
 """
 from ankiweb.ankiconnect.extra_actions import models  # noqa: F401 — registers extra actions
+from ankiweb.ankiconnect.extra_actions import notes  # noqa: F401 — registers extra actions
 from ankiweb.ankiconnect.extra_actions import notify  # noqa: F401 — registers extra actions
 from ankiweb.ankiconnect.extra_actions import scheduling  # noqa: F401 — registers extra actions

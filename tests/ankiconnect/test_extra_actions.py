@@ -31,6 +31,14 @@ def _model_names(client):
     return client.post("/actions/modelNames", json={}).json()["result"]
 
 
+def _add_note(client, deck, model, fields):
+    """Add a note (always allowing duplicates) and return its noteId."""
+    r = _post(client, "/actions/addNote",
+              note={"deckName": deck, "modelName": model, "fields": fields,
+                    "options": {"allowDuplicate": True}})
+    return r["result"]
+
+
 def test_delete_model_unused(client):
     assert "Basic (and reversed card)" in _model_names(client)
     r = _post(client, "/extra_actions/deleteModel", modelName="Basic (and reversed card)")
@@ -169,3 +177,57 @@ def test_notify_config_in_openapi(client):
     assert "/extra_actions/getNotifyConfig" in paths
     assert "/extra_actions/setNotifyConfig" in paths
     assert "/actions/setNotifyConfig" not in paths  # extra-only, not a canonical action
+
+
+# ----- removeDuplicateNotes (all-fields, deck-scoped de-duplication) -----
+def test_remove_duplicate_notes_keeps_oldest(client):
+    _post(client, "/actions/createDeck", deck="Dup")
+    a = _add_note(client, "Dup", "Basic", {"Front": "Q", "Back": "A"})
+    b = _add_note(client, "Dup", "Basic", {"Front": "Q", "Back": "A"})
+    c = _add_note(client, "Dup", "Basic", {"Front": "Q", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="Dup")["result"]
+    assert r["duplicateGroups"] == 1
+    assert r["duplicateNotes"] == 2
+    assert r["deleted"] == 2
+    assert r["dryRun"] is False
+    assert r["notesScanned"] == 3
+    assert r["groups"][0]["model"] == "Basic"
+    assert r["groups"][0]["kept"] == a                      # oldest survives
+    assert r["groups"][0]["deleted"] == [b, c]              # newer copies, ascending nid
+    remaining = client.post("/actions/findNotes", json={"query": "deck:Dup"}).json()["result"]
+    assert remaining == [a]
+
+
+def test_remove_duplicate_notes_dry_run(client):
+    _post(client, "/actions/createDeck", deck="DupDry")
+    a = _add_note(client, "DupDry", "Basic", {"Front": "Q", "Back": "A"})
+    b = _add_note(client, "DupDry", "Basic", {"Front": "Q", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="DupDry", dryRun=True)["result"]
+    assert r["dryRun"] is True
+    assert r["duplicateGroups"] == 1 and r["duplicateNotes"] == 1  # 2 identical -> 1 redundant
+    assert r["deleted"] == 0                                 # nothing removed
+    remaining = client.post("/actions/findNotes", json={"query": "deck:DupDry"}).json()["result"]
+    assert sorted(remaining) == sorted([a, b])
+
+
+def test_remove_duplicate_notes_by_id(client):
+    did = _post(client, "/actions/createDeck", deck="DupId")["result"]
+    _add_note(client, "DupId", "Basic", {"Front": "Q", "Back": "A"})
+    _add_note(client, "DupId", "Basic", {"Front": "Q", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deckId=did)["result"]
+    assert r["deckId"] == did and r["deck"] == "DupId"
+    assert r["deleted"] == 1
+
+
+def test_remove_duplicate_notes_no_duplicates(client):
+    _post(client, "/actions/createDeck", deck="Uniq")
+    _add_note(client, "Uniq", "Basic", {"Front": "Q1", "Back": "A"})
+    _add_note(client, "Uniq", "Basic", {"Front": "Q2", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="Uniq")["result"]
+    assert r["duplicateGroups"] == 0 and r["duplicateNotes"] == 0 and r["deleted"] == 0
+    assert r["groups"] == []
+
+
+def test_remove_duplicate_notes_deck_not_found(client):
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="NoSuchDeck")
+    assert r["result"] is None and "deck was not found" in r["error"]

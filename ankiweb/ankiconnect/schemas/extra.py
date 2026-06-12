@@ -38,3 +38,13 @@ class SetNotifyConfigParams(ACBaseModel):
     scope: Optional[str] = Field(default=None, description="'leaf' (last-level decks) or 'all'.")
     resync: Optional[bool] = Field(default=None,
                                    description="If true, re-push every nonzero deck after saving.")
+
+
+class RemoveDuplicateNotesParams(ACBaseModel):
+    """Find notes in a deck (and its subdecks) that are duplicates across ALL fields within the
+    same note type, and remove the newer copies (keeping the oldest). Identify the deck by name
+    or id. Set dryRun to preview the statistics without deleting anything."""
+    deck: Optional[str] = Field(default=None, description="Deck name.")
+    deckId: Optional[int] = Field(default=None, description="Deck id (alternative to `deck`).")
+    dryRun: bool = Field(default=False,
+                         description="If true, report duplicates but delete nothing.")
