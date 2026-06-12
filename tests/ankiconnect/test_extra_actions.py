@@ -245,3 +245,66 @@ def test_remove_duplicate_notes_bad_deck_id(client):
     r2 = _post(client, "/extra_actions/removeDuplicateNotes",
                deckId=99999999, deck="DupBad")["result"]
     assert r2["deck"] == "DupBad" and r2["deleted"] == 1
+
+
+def test_remove_duplicate_notes_all_fields_participate(client):
+    # same first field, different second field -> NOT duplicates (built-in find_dupes WOULD
+    # flag these because it only compares the first field)
+    _post(client, "/actions/createDeck", deck="AllF")
+    a = _add_note(client, "AllF", "Basic", {"Front": "Q", "Back": "A1"})
+    b = _add_note(client, "AllF", "Basic", {"Front": "Q", "Back": "A2"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="AllF")["result"]
+    assert r["duplicateGroups"] == 0 and r["deleted"] == 0
+    remaining = client.post("/actions/findNotes", json={"query": "deck:AllF"}).json()["result"]
+    assert sorted(remaining) == sorted([a, b])
+
+
+def test_remove_duplicate_notes_cross_notetype_not_merged(client):
+    # identical field values but different note types -> NOT duplicates
+    _post(client, "/actions/createDeck", deck="XType")
+    a = _add_note(client, "XType", "Basic", {"Front": "Q", "Back": "A"})
+    b = _add_note(client, "XType", "Basic (and reversed card)", {"Front": "Q", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="XType")["result"]
+    assert r["duplicateGroups"] == 0 and r["deleted"] == 0
+    remaining = client.post("/actions/findNotes", json={"query": "deck:XType"}).json()["result"]
+    assert sorted(remaining) == sorted([a, b])
+
+
+def test_remove_duplicate_notes_includes_subdecks(client):
+    _post(client, "/actions/createDeck", deck="Parent")
+    _post(client, "/actions/createDeck", deck="Parent::Child")
+    a = _add_note(client, "Parent", "Basic", {"Front": "S", "Back": "B"})
+    b = _add_note(client, "Parent::Child", "Basic", {"Front": "S", "Back": "B"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="Parent")["result"]
+    assert r["duplicateGroups"] == 1 and r["deleted"] == 1
+    assert r["groups"][0]["kept"] == a              # oldest (in Parent) kept
+    assert r["groups"][0]["deleted"] == [b]         # subdeck copy removed
+    remaining = client.post("/actions/findNotes", json={"query": "deck:Parent"}).json()["result"]
+    assert remaining == [a]
+
+
+def test_remove_duplicate_notes_strip_html_equivalent(client):
+    # HTML-different but strip-equivalent first field -> duplicates
+    _post(client, "/actions/createDeck", deck="Strip")
+    a = _add_note(client, "Strip", "Basic", {"Front": "Q", "Back": "A"})
+    b = _add_note(client, "Strip", "Basic", {"Front": "<b>Q</b>", "Back": "A"})
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deck="Strip")["result"]
+    assert r["duplicateGroups"] == 1 and r["deleted"] == 1
+    assert r["groups"][0]["kept"] == a
+
+
+def test_remove_duplicate_notes_not_on_canonical_root(client):
+    # the canonical POST / dispatcher must NOT know removeDuplicateNotes
+    body = client.post("/", json={"action": "removeDuplicateNotes", "version": 6,
+                                  "params": {"deck": "Default"}}).json()
+    assert body["result"] is None and "unsupported action" in body["error"]
+    # and it is not a typed /actions/ route either
+    assert client.post("/actions/removeDuplicateNotes", json={"deck": "x"}).status_code == 404
+
+
+def test_remove_duplicate_notes_in_openapi(client):
+    schema = client.get("/openapi.json").json()
+    assert "/extra_actions/removeDuplicateNotes" in schema["paths"]
+    assert "/actions/removeDuplicateNotes" not in schema["paths"]
+    assert "RemoveDuplicateNotesParams" in schema["components"]["schemas"]
+    assert "extra_actions" in schema["paths"]["/extra_actions/removeDuplicateNotes"]["post"]["tags"]
