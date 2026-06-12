@@ -106,6 +106,20 @@ def test_remove_duplicate_notes_no_duplicates(client):
 def test_remove_duplicate_notes_deck_not_found(client):
     r = _post(client, "/extra_actions/removeDuplicateNotes", deck="NoSuchDeck")
     assert r["result"] is None and "deck was not found" in r["error"]
+
+
+def test_remove_duplicate_notes_bad_deck_id(client):
+    # a bogus deckId must NOT resolve to a phantom deck (col.decks.get defaults to the Default
+    # deck for unknown ids) -> it errors when no name is given...
+    r = _post(client, "/extra_actions/removeDuplicateNotes", deckId=99999999)
+    assert r["result"] is None and "deck was not found" in r["error"]
+    # ...and an invalid deckId does not shadow a valid deck name (falls back to the name)
+    _post(client, "/actions/createDeck", deck="DupBad")
+    _add_note(client, "DupBad", "Basic", {"Front": "Q", "Back": "A"})
+    _add_note(client, "DupBad", "Basic", {"Front": "Q", "Back": "A"})
+    r2 = _post(client, "/extra_actions/removeDuplicateNotes",
+               deckId=99999999, deck="DupBad")["result"]
+    assert r2["deck"] == "DupBad" and r2["deleted"] == 1
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -155,7 +169,11 @@ async def remove_duplicate_notes(rt, deck=None, deckId=None, dryRun=False):
     /extra_actions/removeDuplicateNotes, never via the canonical POST /."""
     def fn(col):
         # resolve the deck: a valid deckId wins, else fall back to the name
-        did = deckId if (deckId is not None and col.decks.get(deckId) is not None) else None
+        # default=False is REQUIRED: col.decks.get(id) defaults to returning the Default deck
+        # for ANY unknown id, which would make a bogus deckId resolve to a phantom "[no deck]"
+        # scope and even shadow a valid `deck` name. default=False returns None for unknown ids.
+        did = deckId if (deckId is not None
+                         and col.decks.get(deckId, default=False) is not None) else None
         name = col.decks.name(did) if did is not None else None
         if name is None and deck:
             d = col.decks.by_name(deck)
